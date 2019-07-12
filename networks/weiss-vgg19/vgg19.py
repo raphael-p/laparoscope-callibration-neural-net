@@ -82,53 +82,58 @@ def _data_split(images, labels, split):
 
 
 if __name__ == "__main__":
-    with tf.device('/device:GPU:2'):
-    # data import
-    n_batch = 1
-    proportion_of_test_data = 0.1
-    img_loc = "../data/generated_images/"
-    label_loc = "../data/labels/"
-    X, Y, x_test, y_test = data_import(n_batch, img_loc, label_loc, split=proportion_of_test_data)
-    print("train images shape: ", X.shape)
-    print("train labels shape: ", Y.shape)
-    print("test images shape: ", x_test.shape)
-    print("test labels shape: ", y_test.shape)
-    print("data import complete.\n")
+    with tf.device('/device:GPU:0'):
+        # data import
+        n_batch = 1
+        proportion_of_test_data = 0.1
+        img_loc = "../data/generated_images/"
+        label_loc = "../data/labels/"
+        X, Y, x_test, y_test = data_import(n_batch, img_loc, label_loc, split=proportion_of_test_data)
+        print("train images shape: ", X.shape)
+        print("train labels shape: ", Y.shape)
+        print("test images shape: ", x_test.shape)
+        print("test labels shape: ", y_test.shape)
+        print("data import complete.\n")
 
-    # network settings
-    img_width = X.shape[2]
-    img_length = X.shape[1]
-    channels = X.shape[3]
-    img_shape = (X.shape[1], X.shape[2], X.shape[3])
-    epochs = 1
-    minibatch_size = 20
+        # network settings
+        img_width = X.shape[2]
+        img_length = X.shape[1]
+        channels = X.shape[3]
+        img_shape = (X.shape[1], X.shape[2], X.shape[3])
+        epochs = 1
+        minibatch_size = 20
 
-    VGG19_MODEL = VGG19(input_shape=img_shape, include_top=False, weights='imagenet', pooling='avg')
-    VGG19_MODEL.trainable = False
-    flattening_layer = Flatten(name='flatten')
-    dense_layer_1 = Dense(4096, activation='tanh', name='fc1')
-    dense_layer_2 = Dense(4096, activation='tanh', name='fc2')
-    prediction_layer = Dense(Y.shape[1], name='predictions')
+        VGG19_MODEL = VGG19(input_shape=img_shape, include_top=False, weights='imagenet', pooling='avg')
+        VGG19_MODEL.trainable = False
+        flattening_layer = Flatten(name='flatten')
+        dense_layer_1 = Dense(4096, activation='tanh', name='fc1')
+        dense_layer_2 = Dense(4096, activation='tanh', name='fc2')
+        prediction_layer = Dense(Y.shape[1], name='predictions')
 
-    model = Sequential([
-        VGG19_MODEL,
-        flattening_layer,
-        dense_layer_1,
-        dense_layer_2,
-        prediction_layer
-    ])
+        model = Sequential([
+            VGG19_MODEL,
+            flattening_layer,
+            dense_layer_1,
+            dense_layer_2,
+            prediction_layer
+        ])
 
-    tensorboard = TensorBoard()
+        tensorboard = TensorBoard()
 
-    model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
-                  loss=tf.keras.losses.MSE,
-                  metrics=[mae, mape, mse, cosine_similarity])
+        model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
+                      loss=tf.keras.losses.MSE,
+                      metrics=[mae, mape, mse, cosine_similarity])
 
-    plot_model(model, to_file="../data/model.png")
-    print(model.summary())
+        plot_model(model, to_file="../data/model.png")
+        print(model.summary())
 
-    model.fit(X, Y, validation_data=(x_test[:20], y_test[:20]), epochs=epochs, batch_size=minibatch_size,
-              verbose=1, callbacks=[tensorboard])
+        model.fit(X, Y, validation_data=(x_test[:20], y_test[:20]), epochs=epochs, batch_size=minibatch_size,
+                  verbose=1, callbacks=[tensorboard])
 
-    print("saving weights...")
-    model.save_weights('weights/my_model_weights.h5')
+        print("saving weights...")
+        model.save_weights('weights/my_model_weights.h5')
+
+    # Creates a session with log_device_placement set to True.
+    sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+    # Runs the op.
+    print(sess.run())
