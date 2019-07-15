@@ -84,8 +84,8 @@ def _data_split(images, labels, split):
 if __name__ == "__main__":
     with tf.device('/device:GPU:0'):
         # data import
-        n_batch = 1
-        proportion_of_test_data = 0.1
+        n_batch = 60
+        proportion_of_test_data = 0.2
         img_loc = "../data/generated_images/"
         label_loc = "../data/labels/"
         X, Y, x_test, y_test = data_import(n_batch, img_loc, label_loc, split=proportion_of_test_data)
@@ -100,8 +100,8 @@ if __name__ == "__main__":
         img_length = X.shape[1]
         channels = X.shape[3]
         img_shape = (X.shape[1], X.shape[2], X.shape[3])
-        epochs = 1
-        minibatch_size = 20
+        epochs = 20
+        minibatch_size = 30
 
         VGG19_MODEL = VGG19(input_shape=img_shape, include_top=False, weights='imagenet', pooling='avg')
         VGG19_MODEL.trainable = False
@@ -131,7 +131,7 @@ if __name__ == "__main__":
                   verbose=1, callbacks=[tensorboard])
 
         print("saving weights...")
-        model.save_weights('weights/my_model_weights.h5')
+        model.save_weights('weights/vgg_1.h5')
 
     # Creates a session with log_device_placement set to True.
     sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
