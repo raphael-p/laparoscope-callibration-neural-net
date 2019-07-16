@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.applications import VGG19
+from tensorflow.keras.applications import VGG19, ResNet50, InceptionV3
 from tensorflow.keras.layers import Dense, Flatten
 from tensorflow.keras import Sequential
 from tensorflow.keras.utils import plot_model
@@ -24,7 +24,7 @@ def sorted_nicely(l):
 
 def set_split(img_loc, num, split):
     batch_names = next(os.walk(img_loc))[1]
-    if n_batch > len(batch_names):
+    if num > len(batch_names):
         raise ValueError("requesting more batches than there are in the data directory")
     shuffle(batch_names)
     n_test = int(num * split)
@@ -87,14 +87,14 @@ class BatchGenerator:
             raise StopIteration()
 
 
-if __name__ == "__main__":
+def run(network="vgg", n_batch=60, epochs=10, minibatch_size=20,
+        img_loc="../data/generated_images/", label_loc="../data/labels/"):
     with tf.device('/device:GPU:0'):
         # data import
-        n_batch = 60
         proportion_of_test_data = 0.2
-        BatchGenerator.image_location = "../data/generated_images/"
-        BatchGenerator.label_location = "../data/labels/"
-        test_batch_names, train_batch_names = set_split(BatchGenerator.image_location, n_batch, proportion_of_test_data)
+        BatchGenerator.image_location = img_loc
+        BatchGenerator.label_location = label_loc
+        test_batch_names, train_batch_names = set_split(img_loc, n_batch, proportion_of_test_data)
 
         # network settings
         img_length = 1920
@@ -102,18 +102,25 @@ if __name__ == "__main__":
         channels = 3
         regression_values = 13
         img_shape = (img_width, img_length, channels)
-        epochs = 1
-        minibatch_size = 30
 
-        VGG19_MODEL = VGG19(input_shape=img_shape, include_top=False, weights='imagenet', pooling='avg')
-        VGG19_MODEL.trainable = False
+        if network == "vgg":
+            base_net = VGG19(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
+        elif network == "resnet":
+            base_net = ResNet50(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
+        elif network == "inception":
+            base_net = InceptionV3(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
+        else:
+            raise ValueError("Invalid network name")
+
+        base_net.trainable = False
+
         flattening_layer = Flatten(name='flatten')
         dense_layer_1 = Dense(4096, activation='tanh', name='fc1')
         dense_layer_2 = Dense(4096, activation='tanh', name='fc2')
         prediction_layer = Dense(regression_values, name='predictions')
 
         model = Sequential([
-            VGG19_MODEL,
+            base_net,
             flattening_layer,
             dense_layer_1,
             dense_layer_2,
@@ -151,3 +158,8 @@ if __name__ == "__main__":
     sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
     # Runs the op.
     print(sess.run(prediction_layer))
+
+
+if __name__ == "__main__":
+    run()
+
