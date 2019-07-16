@@ -15,33 +15,36 @@ import re
 from random import shuffle
 
 
-def sorted_nicely( l ):
+def sorted_nicely(l):
     """ Sort the given iterable in the way that humans expect."""
     convert = lambda text: int(text) if text.isdigit() else text
-    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ]
-    return sorted(l, key = alphanum_key)
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(l, key=alphanum_key)
 
 
-def data_import(n_batches, image_location, label_location, split=0.2):
-    batch_names = next(os.walk(image_location))[1]
+def set_split(img_loc, num, split):
+    batch_names = next(os.walk(img_loc))[1]
+    if n_batch > len(batch_names):
+        raise ValueError("requesting more batches than there are in the data directory")
     shuffle(batch_names)
+    n_test = int(num * split)
+    test_set = batch_names[:n_test]
+    train_set = batch_names[n_test:num]
+    return test_set, train_set
 
+
+def _data_import(batch_name, image_location, label_location):
     # image import
     print("importing images...")
     images = []
-    batch_counter = 0
-    for databatch in batch_names:
-        if batch_counter >= n_batches:
-            break
-        root = image_location+databatch+'/'
-        files = next(os.walk(root))[2]
-        for name in tqdm(sorted_nicely(files), desc="importing from "+root):
-            try:
-                img = cvtColor(imread(root+name), COLOR_BGR2RGB)
-                images.append(img)
-            except error:
-                continue
-        batch_counter += 1
+    root = image_location+batch_name+'/'
+    files = next(os.walk(root))[2]
+    for name in tqdm(sorted_nicely(files), desc="importing from "+root):
+        try:
+            img = cvtColor(imread(root+name), COLOR_BGR2RGB)
+            images.append(img)
+        except error:
+            continue
     time.sleep(0.01)  # quick pause to avoid printing overlaps
     print("converting to image list to numpy array...")
     images = np.asarray(images, dtype=np.uint8)
@@ -49,36 +52,39 @@ def data_import(n_batches, image_location, label_location, split=0.2):
     # label import
     print("importing labels...")
     labels = []
-    batch_counter = 0
-    for labelbatch in batch_names:
-        if batch_counter >= n_batches:
-            break
-        with open(label_location+labelbatch+'.csv', 'rt') as f:
-            csv_reader = csv.reader(f)
-            next(csv_reader)  # skip the heading
-            for line in csv_reader:
-                labels.append(line)
-        batch_counter += 1
+    with open(label_location+batch_name+'.csv', 'rt') as f:
+        csv_reader = csv.reader(f)
+        next(csv_reader)  # skip the heading
+        for line in csv_reader:
+            labels.append(line)
     print("converting to label list to numpy array...")
     labels = np.asarray(labels)
-
-    # randomise and split
-    print("randomising and splitting data between test and sample sets...")
-    return _data_split(images, labels, split=split)
+    return images, labels
 
 
-def _data_split(images, labels, split):
-    size = images.shape[0]
-    perm = np.random.permutation(size)
-    images = images[perm]
-    labels = labels[perm]
-    test_num = int(split * size)
+class BatchGenerator:
+    # static variables
+    image_location = "placeholder"
+    label_location = "placeholder"
 
-    images_train_ = images[:-test_num]
-    labels_train_ = labels[:-test_num]
-    images_test_ = images[-test_num:]
-    labels_test_ = labels[-test_num:]
-    return images_train_, labels_train_, images_test_, labels_test_
+    def __init__(self, batch_names):
+        self.n_batches = len(batch_names)
+        self.b_names = batch_names
+        self.counter = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return self.next()
+
+    def next(self):
+        if self.counter < self.n_batches:
+            current_batch = self.b_names[self.counter]
+            self.counter += 1
+            return _data_import(current_batch, BatchGenerator.image_location, BatchGenerator.label_location)
+        else:
+            raise StopIteration()
 
 
 if __name__ == "__main__":
@@ -86,21 +92,17 @@ if __name__ == "__main__":
         # data import
         n_batch = 60
         proportion_of_test_data = 0.2
-        img_loc = "../data/generated_images/"
-        label_loc = "../data/labels/"
-        X, Y, x_test, y_test = data_import(n_batch, img_loc, label_loc, split=proportion_of_test_data)
-        print("train images shape: ", X.shape)
-        print("train labels shape: ", Y.shape)
-        print("test images shape: ", x_test.shape)
-        print("test labels shape: ", y_test.shape)
-        print("data import complete.\n")
+        BatchGenerator.image_location = "../data/generated_images/"
+        BatchGenerator.label_location = "../data/labels/"
+        test_batch_names, train_batch_names = set_split(BatchGenerator.image_location, n_batch, proportion_of_test_data)
 
         # network settings
-        img_width = X.shape[2]
-        img_length = X.shape[1]
-        channels = X.shape[3]
-        img_shape = (X.shape[1], X.shape[2], X.shape[3])
-        epochs = 20
+        img_length = 1920
+        img_width = 1080
+        channels = 3
+        regression_values = 13
+        img_shape = (img_width, img_length, channels)
+        epochs = 1
         minibatch_size = 30
 
         VGG19_MODEL = VGG19(input_shape=img_shape, include_top=False, weights='imagenet', pooling='avg')
@@ -108,7 +110,7 @@ if __name__ == "__main__":
         flattening_layer = Flatten(name='flatten')
         dense_layer_1 = Dense(4096, activation='tanh', name='fc1')
         dense_layer_2 = Dense(4096, activation='tanh', name='fc2')
-        prediction_layer = Dense(Y.shape[1], name='predictions')
+        prediction_layer = Dense(regression_values, name='predictions')
 
         model = Sequential([
             VGG19_MODEL,
@@ -122,13 +124,25 @@ if __name__ == "__main__":
 
         model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
                       loss=tf.keras.losses.MSE,
-                      metrics=[mae, mape, mse, cosine_similarity])
+                      metrics=[mae, mape, cosine_similarity])
 
-        plot_model(model, to_file="../data/model.png")
+        # plot_model(model, to_file="../data/model.png")
         print(model.summary())
 
-        model.fit(X, Y, validation_data=(x_test[:20], y_test[:20]), epochs=epochs, batch_size=minibatch_size,
-                  verbose=1, callbacks=[tensorboard])
+        for e in range(epochs):
+            print("\n———EPOCH %d———" % e)
+            for X, Y in BatchGenerator(train_batch_names):
+                print(X.shape)
+                print(Y.shape)
+                model.fit(X, Y, batch_size=minibatch_size, epochs=1, verbose=1, callbacks=[tensorboard])
+
+        # final evaluation of the model
+        for x_test, y_test in BatchGenerator(test_batch_names):
+            scores = model.evaluate(x_test, y_test, verbose=0)
+            print("MSE (loss): %.2f%%" % (scores[0] * 100))
+            print("MAE: %.2f%%" % (scores[1] * 100))
+            print("MAPE: %.2f%%" % (scores[2] * 100))
+            print("Cosine: %.2f%%" % (scores[3] * 100))
 
         print("saving weights...")
         model.save_weights('weights/vgg_1.h5')
@@ -136,4 +150,4 @@ if __name__ == "__main__":
     # Creates a session with log_device_placement set to True.
     sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
     # Runs the op.
-    print(sess.run())
+    print(sess.run(prediction_layer))
