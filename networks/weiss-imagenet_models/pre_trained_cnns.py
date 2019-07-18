@@ -4,7 +4,7 @@ from tensorflow.keras.layers import Dense, Flatten
 from tensorflow.keras import Sequential
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.losses import mae, mape, mse, cosine_similarity
-from tensorflow.python.keras.callbacks import TensorBoard
+from tensorflow.keras.callbacks import TensorBoard
 from cv2 import cvtColor, imread, COLOR_BGR2RGB, error
 import csv
 import numpy as np
@@ -23,19 +23,28 @@ def sorted_nicely(l):
 
 
 def set_split(img_loc, num, split):
+    # split batches into train and test batches
     batch_names = next(os.walk(img_loc))[1]
+    file_names = next(os.walk(img_loc))[2]
     if num > len(batch_names):
         raise ValueError("requesting more batches than there are in the data directory")
     shuffle(batch_names)
     n_test = int(num * split)
     test_set = batch_names[:n_test]
     train_set = batch_names[n_test:num]
-    return test_set, train_set
+    # count files in train and test sets
+    train_count = 0
+    test_count = 0
+    for test_batch in test_set:
+        test_count += len(next(os.walk(img_loc + test_batch))[2])
+    for train_batch in train_set:
+        train_count += len(next(os.walk(img_loc + train_batch))[2])
+
+    return test_set, train_set, test_count, train_count
 
 
 def _data_import(batch_name, image_location, label_location):
     # image import
-    print("importing images...")
     images = []
     root = image_location+batch_name+'/'
     files = next(os.walk(root))[2]
@@ -48,7 +57,6 @@ def _data_import(batch_name, image_location, label_location):
     images = np.asarray(images, dtype=np.uint8)
 
     # label import
-    print("importing labels...")
     labels = []
     with open(label_location+batch_name+'.csv', 'rt') as f:
         csv_reader = csv.reader(f)
@@ -60,39 +68,23 @@ def _data_import(batch_name, image_location, label_location):
     return images, labels
 
 
-class BatchGenerator:
-    # static variables
-    image_location = "placeholder"
-    label_location = "placeholder"
-
-    def __init__(self, batch_names):
-        self.n_batches = len(batch_names)
-        self.b_names = batch_names
-        self.counter = 0
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        return self.next()
-
-    def next(self):
-        if self.counter < self.n_batches:
-            current_batch = self.b_names[self.counter]
-            self.counter += 1
-            return _data_import(current_batch, BatchGenerator.image_location, BatchGenerator.label_location)
-        else:
-            raise StopIteration()
+def batch_gen(batch_names, image_location, label_location, batch_size):
+    n_batches = len(batch_names)
+    counter=0
+    while counter < n_batches:
+        current_batch = batch_names[counter]
+        counter+=1
+        x_data, y_data = _data_import(current_batch, image_location, label_location)
+        for idx in range(0, len(x_data), batch_size):
+            yield x_data[idx:idx+batch_size], y_data[idx:idx+batch_size]
 
 
-def run(network="vgg", n_batch=60, epochs=10, minibatch_size=3,
-        img_loc="../data/generated_images/", label_loc="../data/labels/", weight_file='weights/vgg_1.h5', gpu_idx=0):
+def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2,
+        img_loc="../data/generated_images/", label_loc="../data/labels/", metrics_file='./logs_practice/', gpu_idx=0):
     with tf.device('/device:GPU:'+str(gpu_idx)):
         # data import
         proportion_of_test_data = 0.2
-        BatchGenerator.image_location = img_loc
-        BatchGenerator.label_location = label_loc
-        test_batch_names, train_batch_names = set_split(img_loc, n_batch, proportion_of_test_data)
+        test_batch_names, train_batch_names, test_num, train_num = set_split(img_loc, n_batch, proportion_of_test_data)
 
         # network settings
         img_length = 1920
@@ -125,7 +117,7 @@ def run(network="vgg", n_batch=60, epochs=10, minibatch_size=3,
             prediction_layer
         ])
 
-        tensorboard = TensorBoard()
+        tensorboard = TensorBoard(log_dir=metrics_file)
 
         model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
                       loss=tf.keras.losses.MSE,
@@ -134,21 +126,14 @@ def run(network="vgg", n_batch=60, epochs=10, minibatch_size=3,
         # plot_model(model, to_file="../data/model.png")
         print(model.summary())
 
-        for e in range(epochs):
-            print("\n———EPOCH %d———" % e)
-            for X, Y in BatchGenerator(train_batch_names):
-                model.fit(X, Y, batch_size=minibatch_size, epochs=1, verbose=1, callbacks=[tensorboard])
+        model.fit_generator(batch_gen(train_batch_names, img_loc, label_loc, minibatch_size), epochs=epochs, verbose=2,
+                            steps_per_epoch=int(train_num/minibatch_size), callbacks=[tensorboard])
 
-        # final evaluation of the model
-        for x_test, y_test in BatchGenerator(test_batch_names):
-            scores = model.evaluate(x_test, y_test, verbose=0)
-            print("MSE (loss): %.2f%%" % (scores[0] * 100))
-            print("MAE: %.2f%%" % (scores[1] * 100))
-            print("MAPE: %.2f%%" % (scores[2] * 100))
-            print("Cosine: %.2f%%" % (scores[3] * 100))
+        scores = model.evaluate_generator(batch_gen(train_batch_names, img_loc, label_loc, minibatch_size), verbose=0,
+                                          steps=int(test_num/minibatch_size), callbacks=[tensorboard])
 
         print("saving weights...")
-        model.save_weights(weight_file)
+        model.save_weights(metrics_file+"weights.h5")
 
     # Creates a session with log_device_placement set to True.
     sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))

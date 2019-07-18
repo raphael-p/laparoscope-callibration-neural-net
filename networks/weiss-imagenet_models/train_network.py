@@ -12,12 +12,12 @@ def process():
     parser.add_argument('--batch', '-b', type=int, default=60,
                         help="number of batches train with; "
                              "default: 60")
-    parser.add_argument('--epochs', '-e', type=int, default=10,
+    parser.add_argument('--epochs', '-e', type=int, default=5,
                         help="number of epochs to run model for; "
-                             "default: 10")
-    parser.add_argument('--minibatch', '-m', type=int, default=3,
+                             "default: 5")
+    parser.add_argument('--minibatch', '-m', type=int, default=2,
                         help="size of training mini-batch; "
-                             "default: 3")
+                             "default: 2")
     parser.add_argument('--gpu', '-g', type=int, default=0,
                         help="index of machine GPU to train with; "
                              "default: 0")
@@ -27,9 +27,9 @@ def process():
     parser.add_argument('--labelfolder', '-l', type=str, default='../data/labels/',
                         help="relative address of folder where labels are stored; "
                              "default: ../data/labels/")
-    parser.add_argument('--weights', '-w', type=str, default='weights/vgg_1.h5',
-                        help="relative address of file where weights are saved; "
-                             "default: weights/vgg_1.h5")
+    parser.add_argument('--metrics', type=str, default='./logs_practice/',
+                        help="relative address of folder where weights and logs are saved; "
+                             "default: ./logs_practice/")
     arguments = parser.parse_args()
 
     if not os.path.isdir(arguments.imagefolder):
@@ -40,9 +40,13 @@ def process():
         raise TypeError("Labels directory '" + arguments.labelfolder
                         + "' is not a valid directory. Please define a valid location. "
                         + "See help: -h or --help")
+    if not os.path.isdir(arguments.metrics):
+        raise TypeError("Metrics directory '" + arguments.metrics
+                        + "' is not a valid directory. Please define a valid location. "
+                        + "See help: -h or --help")
 
     run(network=arguments.basenet, n_batch=arguments.batch, epochs=arguments.epochs, minibatch_size=arguments.minibatch,
-        img_loc=arguments.imagefolder, label_loc=arguments.labelfolder, weight_file=arguments.weights,
+        img_loc=arguments.imagefolder, label_loc=arguments.labelfolder, metrics_file=arguments.metrics,
         gpu_idx=arguments.gpu)
 
 
