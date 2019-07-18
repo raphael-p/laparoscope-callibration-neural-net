@@ -15,15 +15,21 @@ def process():
     parser.add_argument('--epochs', '-e', type=int, default=10,
                         help="number of epochs to run model for; "
                              "default: 10")
-    parser.add_argument('--minibatch', '-m', type=int, default=60,
+    parser.add_argument('--minibatch', '-m', type=int, default=3,
                         help="size of training mini-batch; "
-                             "default: 20")
+                             "default: 3")
+    parser.add_argument('--gpu', '-g', type=int, default=0,
+                        help="index of machine GPU to train with; "
+                             "default: 0")
     parser.add_argument('--imagefolder', '-i', type=str, default='../data/generated_images/',
                         help="relative address of folder where generated images are stored; "
                              "default: ../data/generated_images/")
     parser.add_argument('--labelfolder', '-l', type=str, default='../data/labels/',
                         help="relative address of folder where labels are stored; "
                              "default: ../data/labels/")
+    parser.add_argument('--weights', '-w', type=str, default='weights/vgg_1.h5',
+                        help="relative address of file where weights are saved; "
+                             "default: weights/vgg_1.h5")
     arguments = parser.parse_args()
 
     if not os.path.isdir(arguments.imagefolder):
@@ -36,7 +42,8 @@ def process():
                         + "See help: -h or --help")
 
     run(network=arguments.basenet, n_batch=arguments.batch, epochs=arguments.epochs, minibatch_size=arguments.minibatch,
-        img_loc=arguments.imagefolder, label_loc=arguments.labelfolder)
+        img_loc=arguments.imagefolder, label_loc=arguments.labelfolder, weight_file=arguments.weights,
+        gpu_idx=arguments.gpu)
 
 
 if __name__ == "__main__":

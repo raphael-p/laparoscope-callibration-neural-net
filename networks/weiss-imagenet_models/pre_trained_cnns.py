@@ -45,8 +45,6 @@ def _data_import(batch_name, image_location, label_location):
             images.append(img)
         except error:
             continue
-    time.sleep(0.01)  # quick pause to avoid printing overlaps
-    print("converting to image list to numpy array...")
     images = np.asarray(images, dtype=np.uint8)
 
     # label import
@@ -57,8 +55,8 @@ def _data_import(batch_name, image_location, label_location):
         next(csv_reader)  # skip the heading
         for line in csv_reader:
             labels.append(line)
-    print("converting to label list to numpy array...")
     labels = np.asarray(labels)
+    print("import complete.")
     return images, labels
 
 
@@ -87,9 +85,9 @@ class BatchGenerator:
             raise StopIteration()
 
 
-def run(network="vgg", n_batch=60, epochs=10, minibatch_size=20,
-        img_loc="../data/generated_images/", label_loc="../data/labels/"):
-    with tf.device('/device:GPU:0'):
+def run(network="vgg", n_batch=60, epochs=10, minibatch_size=3,
+        img_loc="../data/generated_images/", label_loc="../data/labels/", weight_file='weights/vgg_1.h5', gpu_idx=0):
+    with tf.device('/device:GPU:'+str(gpu_idx)):
         # data import
         proportion_of_test_data = 0.2
         BatchGenerator.image_location = img_loc
@@ -139,8 +137,6 @@ def run(network="vgg", n_batch=60, epochs=10, minibatch_size=20,
         for e in range(epochs):
             print("\n———EPOCH %d———" % e)
             for X, Y in BatchGenerator(train_batch_names):
-                print(X.shape)
-                print(Y.shape)
                 model.fit(X, Y, batch_size=minibatch_size, epochs=1, verbose=1, callbacks=[tensorboard])
 
         # final evaluation of the model
@@ -152,7 +148,7 @@ def run(network="vgg", n_batch=60, epochs=10, minibatch_size=20,
             print("Cosine: %.2f%%" % (scores[3] * 100))
 
         print("saving weights...")
-        model.save_weights('weights/vgg_1.h5')
+        model.save_weights(weight_file)
 
     # Creates a session with log_device_placement set to True.
     sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
