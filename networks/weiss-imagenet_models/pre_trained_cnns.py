@@ -25,10 +25,12 @@ def sorted_nicely(l):
 def set_split(img_loc, num, split):
     # split batches into train and test batches
     batch_names = next(os.walk(img_loc))[1]
-    file_names = next(os.walk(img_loc))[2]
     if num > len(batch_names):
         raise ValueError("requesting more batches than there are in the data directory")
+    shuffle(batch_names)
     n_test = int(num * split)
+    if not n_test and num > 1:
+        n_test = 1
     test_set = batch_names[:n_test]
     train_set = batch_names[n_test:num]
 
@@ -67,16 +69,17 @@ def _data_import(batch_name, image_location, label_location):
     return images, labels
 
 
-def batch_gen(batch_names, image_location, label_location, batch_size):
+def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs):
     n_batches = len(batch_names)
-    shuffle(batch_names)
-    counter = 0
-    while counter < n_batches:
-        current_batch = batch_names[counter]
-        counter += 1
-        x_data, y_data = _data_import(current_batch, image_location, label_location)
-        for idx in range(0, len(x_data), batch_size):
-            yield x_data[idx:idx+batch_size], y_data[idx:idx+batch_size]
+    for _ in range(n_epochs):
+        shuffle(batch_names)
+        counter = 0
+        while counter < n_batches:
+            current_batch = batch_names[counter]
+            counter += 1
+            x_data, y_data = _data_import(current_batch, image_location, label_location)
+            for idx in range(0, len(x_data), batch_size):
+                yield x_data[idx:idx+batch_size], y_data[idx:idx+batch_size]
 
 
 def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2,
@@ -124,11 +127,13 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2,
                       metrics=[mae, mape, cosine_similarity])
         # plot_model(model, to_file="../data/model.png")
         print(model.summary())
-
-        model.fit_generator(batch_gen(train_batch_names, img_loc, label_loc, minibatch_size), epochs=epochs, verbose=1,
-                            steps_per_epoch=int(train_num/minibatch_size), callbacks=[tensorboard])
-        model.evaluate_generator(batch_gen(train_batch_names, img_loc, label_loc, minibatch_size), verbose=0,
-                                          steps=int(test_num/minibatch_size), callbacks=[tensorboard])
+        print(train_num)
+        print(test_num)
+        model.fit_generator(batch_gen(train_batch_names, img_loc, label_loc, minibatch_size, epochs), 
+                            epochs=epochs, verbose=1, steps_per_epoch=int(train_num/minibatch_size), callbacks=[tensorboard])
+        print("Evaluation")
+        model.evaluate_generator(batch_gen(test_batch_names, img_loc, label_loc, minibatch_size, 1), 
+                                 verbose=0, steps=int(test_num/minibatch_size), callbacks=[tensorboard])
 
         model.save_weights(metrics_file+list(filter(None, metrics_file.split("/")))[-1]+"_weights.h5")
 
