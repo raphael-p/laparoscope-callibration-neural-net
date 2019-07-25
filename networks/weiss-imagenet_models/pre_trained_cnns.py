@@ -28,10 +28,10 @@ def set_split(img_loc, num, split):
     file_names = next(os.walk(img_loc))[2]
     if num > len(batch_names):
         raise ValueError("requesting more batches than there are in the data directory")
-    shuffle(batch_names)
     n_test = int(num * split)
     test_set = batch_names[:n_test]
     train_set = batch_names[n_test:num]
+
     # count files in train and test sets
     train_count = 0
     test_count = 0
@@ -39,7 +39,6 @@ def set_split(img_loc, num, split):
         test_count += len(next(os.walk(img_loc + test_batch))[2])
     for train_batch in train_set:
         train_count += len(next(os.walk(img_loc + train_batch))[2])
-
     return test_set, train_set, test_count, train_count
 
 
@@ -70,10 +69,11 @@ def _data_import(batch_name, image_location, label_location):
 
 def batch_gen(batch_names, image_location, label_location, batch_size):
     n_batches = len(batch_names)
-    counter=0
+    shuffle(batch_names)
+    counter = 0
     while counter < n_batches:
         current_batch = batch_names[counter]
-        counter+=1
+        counter += 1
         x_data, y_data = _data_import(current_batch, image_location, label_location)
         for idx in range(0, len(x_data), batch_size):
             yield x_data[idx:idx+batch_size], y_data[idx:idx+batch_size]
@@ -83,7 +83,7 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2,
         img_loc="../data/generated_images/", label_loc="../data/labels/", metrics_file='./logs_practice/', gpu_idx=0):
     with tf.device('/device:GPU:'+str(gpu_idx)):
         # data import
-        proportion_of_test_data = 0.2
+        proportion_of_test_data = 0.1
         test_batch_names, train_batch_names, test_num, train_num = set_split(img_loc, n_batch, proportion_of_test_data)
 
         # network settings
@@ -93,6 +93,7 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2,
         regression_values = 13
         img_shape = (img_width, img_length, channels)
 
+        # select pre-built ImageNet network
         if network == "vgg":
             base_net = VGG19(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
         elif network == "resnet":
@@ -101,14 +102,15 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2,
             base_net = InceptionV3(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
         else:
             raise ValueError("Invalid network name")
-
         base_net.trainable = False
 
+        # add top part of network
         flattening_layer = Flatten(name='flatten')
         dense_layer_1 = Dense(4096, activation='tanh', name='fc1')
         dense_layer_2 = Dense(4096, activation='tanh', name='fc2')
         prediction_layer = Dense(regression_values, name='predictions')
 
+        # setup model and TensorBoard
         model = Sequential([
             base_net,
             flattening_layer,
@@ -116,29 +118,19 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2,
             dense_layer_2,
             prediction_layer
         ])
-
         tensorboard = TensorBoard(log_dir=metrics_file)
-
         model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
                       loss=tf.keras.losses.MSE,
                       metrics=[mae, mape, cosine_similarity])
-
         # plot_model(model, to_file="../data/model.png")
         print(model.summary())
 
-        model.fit_generator(batch_gen(train_batch_names, img_loc, label_loc, minibatch_size), epochs=epochs, verbose=2,
+        model.fit_generator(batch_gen(train_batch_names, img_loc, label_loc, minibatch_size), epochs=epochs, verbose=1,
                             steps_per_epoch=int(train_num/minibatch_size), callbacks=[tensorboard])
-
-        scores = model.evaluate_generator(batch_gen(train_batch_names, img_loc, label_loc, minibatch_size), verbose=0,
+        model.evaluate_generator(batch_gen(train_batch_names, img_loc, label_loc, minibatch_size), verbose=0,
                                           steps=int(test_num/minibatch_size), callbacks=[tensorboard])
 
-        print("saving weights...")
-        model.save_weights(metrics_file+"weights.h5")
-
-    # Creates a session with log_device_placement set to True.
-    sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
-    # Runs the op.
-    print(sess.run(prediction_layer))
+        model.save_weights(metrics_file+list(filter(None, metrics_file.split("/")))[-1]+"_weights.h5")
 
 
 if __name__ == "__main__":
