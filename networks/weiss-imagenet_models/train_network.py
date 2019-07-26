@@ -9,6 +9,10 @@ def process():
                         help="base network to use, pre-trained on ImageNet; "
                              "options: vgg, resnet, inception (VGG19, ResNet50, and InceptionV3, respectively); "
                              "default: vgg")
+    parser.add_argument('--loss', type=str, default='mse',
+                        help="loss function to use for network; "
+                             "options: mse, mae; "
+                             "default: mse")
     parser.add_argument('--batch', '-b', type=int, default=60,
                         help="number of batches train with; "
                              "default: 60")
@@ -47,7 +51,7 @@ def process():
 
     run(network=arguments.basenet, n_batch=arguments.batch, epochs=arguments.epochs, minibatch_size=arguments.minibatch,
         img_loc=arguments.imagefolder, label_loc=arguments.labelfolder, metrics_file=arguments.metrics,
-        gpu_idx=arguments.gpu)
+        gpu_idx=arguments.gpu, loss=arguments.loss)
 
 
 if __name__ == "__main__":
