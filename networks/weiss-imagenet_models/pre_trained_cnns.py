@@ -13,7 +13,7 @@ import os
 import time
 import re
 from random import shuffle
-
+import sys
 
 def sorted_nicely(l):
     """ Sort the given iterable in the way that humans expect."""
@@ -29,19 +29,23 @@ def set_split(img_loc, num, split):
         raise ValueError("requesting more batches than there are in the data directory")
     shuffle(batch_names)
     n_test = int(num * split)
-    if not n_test and num > 1:
+    if not n_test and num > 2:
         n_test = 1
     test_set = batch_names[:n_test]
-    train_set = batch_names[n_test:num]
+    valid_set = batch_names[n_test:2*n_test]
+    train_set = batch_names[2*n_test:num]
 
     # count files in train and test sets
     train_count = 0
     test_count = 0
+    valid_count = 0
     for test_batch in test_set:
         test_count += len(next(os.walk(img_loc + test_batch))[2])
     for train_batch in train_set:
         train_count += len(next(os.walk(img_loc + train_batch))[2])
-    return test_set, train_set, test_count, train_count
+    for valid_batch in valid_set:
+        valid_count += len(next(os.walk(img_loc + valid_batch))[2]) 
+    return test_set, train_set, valid_set, test_count, train_count, valid_count
 
 
 def _data_import(batch_name, image_location, label_location):
@@ -86,9 +90,11 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2,
         img_loc="../data/generated_images/", label_loc="../data/labels/", metrics_file='./logs_practice/', gpu_idx=0):
     with tf.device('/device:GPU:'+str(gpu_idx)):
         # data import
-        proportion_of_test_data = 0.1
-        test_batch_names, train_batch_names, test_num, train_num = set_split(img_loc, n_batch, proportion_of_test_data)
-
+        proportion_of_test_data = 0.15
+        test_batch_names, train_batch_names, valid_batch_names, test_num, train_num, val_num = set_split(img_loc, n_batch, proportion_of_test_data)
+        print(test_batch_names, test_num)
+        print(train_batch_names, train_num)
+        print(valid_batch_names, val_num)
         # network settings
         img_length = 1920
         img_width = 1080
@@ -127,15 +133,26 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2,
                       metrics=[mae, mape, cosine_similarity])
         # plot_model(model, to_file="../data/model.png")
         print(model.summary())
-        print(train_num)
-        print(test_num)
-        model.fit_generator(batch_gen(train_batch_names, img_loc, label_loc, minibatch_size, epochs), 
-                            epochs=epochs, verbose=1, steps_per_epoch=int(train_num/minibatch_size), callbacks=[tensorboard])
-        print("Evaluation")
-        model.evaluate_generator(batch_gen(test_batch_names, img_loc, label_loc, minibatch_size, 1), 
-                                 verbose=0, steps=int(test_num/minibatch_size), callbacks=[tensorboard])
 
-        model.save_weights(metrics_file+list(filter(None, metrics_file.split("/")))[-1]+"_weights.h5")
+        # defining generators
+        train_gen = batch_gen(train_batch_names, img_loc, label_loc, minibatch_size, epochs)
+        valid_gen = batch_gen(valid_batch_names, img_loc, label_loc, minibatch_size, epochs)
+        test_gen = batch_gen(test_batch_names, img_loc, label_loc, 1, 1)
+
+        model.fit_generator(train_gen, validation_data=valid_gen, validation_steps=int(val_num/minibatch_size),
+                            epochs=epochs, verbose=1, steps_per_epoch=int(train_num/minibatch_size), callbacks=[tensorboard])
+
+        print("Evaluation")
+        metrics = model.evaluate_generator(test_gen, verbose=1,steps=int(test_num), 
+                                           callbacks=[tensorboard])
+
+        dir_name = list(filter(None, metrics_file.split("/")))[-1]
+        with open(metrics_file+dir_name+"_eval.csv", 'a') as f:
+            writer = csv.writer(f)
+            writer.writerow(["MSE", "MAE", "MAPE", "cos_sim"])
+            writer.writerow([metrics[0], metrics[1], metrics[2], metrics[3]])
+        model.save_weights(metrics_file+dir_name+"_weights.h5")
+        sys.exit()
 
 
 if __name__ == "__main__":
