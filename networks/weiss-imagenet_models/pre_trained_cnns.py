@@ -86,7 +86,7 @@ def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs)
                 yield x_data[idx:idx+batch_size], y_data[idx:idx+batch_size]
 
 
-def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="mae",
+def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         img_loc="../data/generated_images/", label_loc="../data/labels/", metrics_file='./logs_practice/', gpu_idx=0):
     with tf.device('/device:GPU:'+str(gpu_idx)):
         # data import
@@ -128,15 +128,19 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="mae",
             prediction_layer
         ])
         tensorboard = TensorBoard(log_dir=metrics_file)
-        if loss == "mse":
+        if loss == "MSE":
             loss_fun = mse
-        elif loss == "mae":
+            metric_fun_name = "MAE"
+            metric_fun = mae
+        elif loss == "MAE":
             loss_fun = mae
+            metric_fun_name = "MSE"
+            metric_fun = mse
         else:
             raise ValueError("loss defined incorrectly, choose mse or mae")
         model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
                       loss=loss_fun,
-                      metrics=[mse, mae, mape, cosine_similarity])
+                      metrics=[metric_fun, mape, cosine_similarity])
         # plot_model(model, to_file="../data/model.png")
         print(model.summary())
 
@@ -155,8 +159,8 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="mae",
         dir_name = list(filter(None, metrics_file.split("/")))[-1]
         with open(metrics_file+dir_name+"_eval.csv", 'a') as f:
             writer = csv.writer(f)
-            writer.writerow(["loss", "MSE", "MAE", "MAPE", "cos_sim"])
-            writer.writerow([metrics[0], metrics[1], metrics[2], metrics[3], metrics[4]])
+            writer.writerow([loss, metric_fun_name, "MAPE", "cos_sim"])
+            writer.writerow([metrics[0], metrics[1], metrics[2], metrics[3]])
         model.save_weights(metrics_file+dir_name+"_weights.h5")
         sys.exit()
 

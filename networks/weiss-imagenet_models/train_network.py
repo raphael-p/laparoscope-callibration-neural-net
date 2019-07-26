@@ -9,10 +9,10 @@ def process():
                         help="base network to use, pre-trained on ImageNet; "
                              "options: vgg, resnet, inception (VGG19, ResNet50, and InceptionV3, respectively); "
                              "default: vgg")
-    parser.add_argument('--loss', type=str, default='mse',
+    parser.add_argument('--loss', type=str, default='MSE',
                         help="loss function to use for network; "
-                             "options: mse, mae; "
-                             "default: mse")
+                             "options: MSE, MAE; "
+                             "default: MSE")
     parser.add_argument('--batch', '-b', type=int, default=60,
                         help="number of batches train with; "
                              "default: 60")
