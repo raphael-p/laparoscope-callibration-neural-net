@@ -7,7 +7,8 @@ def process():
     parser = ArgumentParser(description="Train calibration model")
     parser.add_argument('--basenet', '-n', type=str, default='vgg',
                         help="base network to use, pre-trained on ImageNet; "
-                             "options: vgg, resnet, inception (VGG19, ResNet50, and InceptionV3, respectively); "
+                             "options: vgg, resnet, inception, densenet "
+                             "(VGG19, ResNet50, InceptionV3, DenseNet201 respectively); "
                              "default: vgg")
     parser.add_argument('--loss', type=str, default='MSE',
                         help="loss function to use for network; "
