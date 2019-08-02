@@ -105,7 +105,7 @@ def pre_built(network, inputs):
 
 def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         img_loc="../data/generated_images/", label_loc="../data/labels/", output_loc='./logs_practice/', gpu_idx=0):
-    #with tf.device('/device:GPU:'+str(gpu_idx)):
+    with tf.device('/device:GPU:'+str(gpu_idx)):
         # data import
         proportion_of_test_data = 0.15
         test_batch_names, train_batch_names, valid_batch_names, test_num, train_num, val_num = set_split(
@@ -149,8 +149,13 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
                       loss=[loss_fun, loss_fun],
                       metrics=[metric_fun, mape, cosine_similarity])
-        plot_model(model, to_file=output_loc+output_name+"_model.png")
+        plot_model(model, to_file=output_loc+output_name+"_map.png")
         print(model.summary())
+
+        # save model structure
+        model_json = model.to_json()
+        with open(output_loc+output_name+"_model.json", "w") as json_file:
+            json_file.write(model_json)
 
         # defining generators
         train_gen = batch_gen(train_batch_names, img_loc, label_loc, minibatch_size, epochs, n_intrinsic)
@@ -165,13 +170,15 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         metrics = model.evaluate_generator(test_gen, verbose=1, steps=int(test_num),
                                            callbacks=[tensorboard])
 
+        # save model weights
         with open(output_loc+output_name+"_eval.csv", 'a') as f:
             writer = csv.writer(f)
             writer.writerow([loss, metric_fun_name, "MAPE", "cos_sim"])
             writer.writerow([metrics[0], metrics[1], metrics[2], metrics[3]])
         model.save_weights(output_loc+output_name+"_weights.h5")
+
         sys.exit()
 
 
 if __name__ == "__main__":
-    run(n_batch=5)
+    run(n_batch=3, epochs=1)
