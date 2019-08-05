@@ -48,38 +48,26 @@ def set_split(img_loc, num, split):
     return test_set, train_set, valid_set, test_count, train_count, valid_count
 
 
-def _data_import(batch_name, image_location, label_location, separator=0, limit=0):
+def _data_import(batch_name, image_location, label_location, separator=0):
     # image import
     images = []
     root = image_location+batch_name+'/'
     files = next(os.walk(root))[2]
-    if limit:
-        counter = 0
     for name in tqdm(sorted_nicely(files), desc="importing from "+root):
         try:
             img = cvtColor(imread(root+name), COLOR_BGR2RGB)
             images.append(img)
-            if limit:
-                counter += 1
-                if counter >= limit:
-                    break
         except error:
             continue
     images = np.asarray(images, dtype=np.uint8)
 
     # label import
     labels = []
-    if limit:
-        counter = 0
     with open(label_location+batch_name+'.csv', 'rt') as f:
         csv_reader = csv.reader(f)
         next(csv_reader)  # skip the heading
         for line in csv_reader:
             labels.append(line)
-            if limit:
-                counter += 1
-                if counter >= limit:
-                    break
     labels = np.asarray(labels)
     if separator:
         labels1 = labels[:, 0:separator]
