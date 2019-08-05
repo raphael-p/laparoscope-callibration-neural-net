@@ -5,6 +5,7 @@ from tensorflow.keras.utils import plot_model
 from tensorflow.keras.models import Model
 from tensorflow.keras.losses import mae, mape, mse, cosine_similarity
 from tensorflow.keras.callbacks import TensorBoard
+from tensorflow.keras import Sequential
 from cv2 import cvtColor, imread, COLOR_BGR2RGB, error
 import csv
 import numpy as np
@@ -47,31 +48,48 @@ def set_split(img_loc, num, split):
     return test_set, train_set, valid_set, test_count, train_count, valid_count
 
 
-def _data_import(batch_name, image_location, label_location, separator):
+def _data_import(batch_name, image_location, label_location, separator=0, limit=0):
     # image import
     images = []
     root = image_location+batch_name+'/'
     files = next(os.walk(root))[2]
+    if limit:
+        counter = 0
     for name in tqdm(sorted_nicely(files), desc="importing from "+root):
         try:
             img = cvtColor(imread(root+name), COLOR_BGR2RGB)
             images.append(img)
+            if limit:
+                counter += 1
+                if counter >= limit:
+                    break
         except error:
             continue
     images = np.asarray(images, dtype=np.uint8)
 
     # label import
     labels = []
+    if limit:
+        counter = 0
     with open(label_location+batch_name+'.csv', 'rt') as f:
         csv_reader = csv.reader(f)
         next(csv_reader)  # skip the heading
         for line in csv_reader:
             labels.append(line)
+            if limit:
+                counter += 1
+                if counter >= limit:
+                    break
     labels = np.asarray(labels)
-    labels1 = labels[:, 0:separator]
-    labels2 = labels[:, separator:]
-    print("import complete.")
-    return images, labels1, labels2
+    if separator:
+        labels1 = labels[:, 0:separator]
+        labels2 = labels[:, separator:]
+        print("import complete.")
+        return images, labels1, labels2
+    else:
+        print("import complete.")
+        return images, labels
+
 
 
 def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs, separator):
@@ -103,6 +121,20 @@ def pre_built(network, inputs):
     return base_net(inputs)
 
 
+def metric_names(loss_name):
+    if loss_name == "MSE":
+        loss_fun = mse
+        metric_fun_name = "MAE"
+        metric_fun = mae
+    elif loss_name == "MAE":
+        loss_fun = mae
+        metric_fun_name = "MSE"
+        metric_fun = mse
+    else:
+        raise ValueError("loss defined incorrectly, choose mse or mae")
+    return loss_fun, metric_fun_name, metric_fun
+
+
 def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         img_loc="../data/generated_images/", label_loc="../data/labels/", output_loc='./logs_practice/', gpu_idx=0):
     with tf.device('/device:GPU:'+str(gpu_idx)):
@@ -118,56 +150,86 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         img_length = 1920
         img_width = 1080
         channels = 3
-        n_intrinsic = 4
-        n_rot = 9
         img_shape = (img_width, img_length, channels)
 
-        # network architecture
-        img_input = Input(shape=img_shape, name='inputs')
-        pre_trained_layer = pre_built(network, img_input)
-        flattening_layer = Flatten(name='flatten')(pre_trained_layer)
-        dense = Dense(4096, activation='tanh', name='fc1')(flattening_layer)
-        dense = Dense(1024, activation='tanh', name='fc2')(dense)
-        dense_intrinsic = Dense(512, activation='tanh', name='fc3-intrinsic')(dense)
-        dense_intrinsic = Dense(n_intrinsic, activation='tanh', name='fc4-intrinsic')(dense_intrinsic)
-        dense_rotation = Dense(512, activation='tanh', name='fc3-rotation')(dense)
-        dense_rotation = Dense(n_rot, activation='tanh', name='fc4-rotation')(dense_rotation)
+        split_losses=False
+        if split_losses:
+            n_intrinsic = 4
+            n_rot = 9
+            img_input = Input(shape=img_shape, name='inputs')
+            pre_trained_layer = pre_built(network, img_input)
+            flattening_layer = Flatten(name='flatten')(pre_trained_layer)
+            dense = Dense(4096, activation='tanh', name='fc1')(flattening_layer)
+            dense = Dense(1024, activation='tanh', name='fc2')(dense)
+            dense_intrinsic = Dense(512, activation='tanh', name='fc3-intrinsic')(dense)
+            dense_intrinsic = Dense(n_intrinsic, activation='tanh', name='fc4-intrinsic')(dense_intrinsic)
+            dense_rotation = Dense(512, activation='tanh', name='fc3-rotation')(dense)
+            dense_rotation = Dense(n_rot, activation='tanh', name='fc4-rotation')(dense_rotation)
 
-        model = Model(inputs=img_input, outputs=[dense_intrinsic, dense_rotation])
+            model = Model(inputs=img_input, outputs=[dense_intrinsic, dense_rotation])
 
-        tensorboard = TensorBoard(log_dir=output_loc)
-        if loss == "MSE":
-            loss_fun = mse
-            metric_fun_name = "MAE"
-            metric_fun = mae
-        elif loss == "MAE":
-            loss_fun = mae
-            metric_fun_name = "MSE"
-            metric_fun = mse
+            tensorboard = TensorBoard(log_dir=output_loc)
+            loss_fun, metric_fun_name, metric_fun = metric_names(loss)
+            model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
+                          loss=[loss_fun, loss_fun],
+                          metrics=[metric_fun, mape, cosine_similarity])
         else:
-            raise ValueError("loss defined incorrectly, choose mse or mae")
-        model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
-                      loss=[loss_fun, loss_fun],
-                      metrics=[metric_fun, mape, cosine_similarity])
-        plot_model(model, to_file=output_loc+output_name+"_map.png")
+            regression_values = 13
+
+            # select pre-built ImageNet network
+            if network == "vgg":
+                base_net = VGG19(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
+            elif network == "resnet":
+                base_net = ResNet50(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
+            elif network == "inception":
+                base_net = InceptionV3(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
+            elif network == "densenet":
+                base_net = DenseNet201(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
+            else:
+                raise ValueError("Invalid network name")
+            base_net.trainable = False
+
+            # add top part of network
+            flattening_layer = Flatten(name='flatten')
+            dense_layer_1 = Dense(4096, activation='tanh', name='fc1')
+            dense_layer_2 = Dense(4096, activation='tanh', name='fc2')
+            prediction_layer = Dense(regression_values, name='predictions')
+
+            # setup model and TensorBoard
+            model = Sequential([
+                base_net,
+                flattening_layer,
+                dense_layer_1,
+                dense_layer_2,
+                prediction_layer
+            ])
+            tensorboard = TensorBoard(log_dir=output_loc)
+            loss_fun, metric_fun_name, metric_fun = metric_names(loss)
+
+            model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
+                          loss=loss_fun,
+                          metrics=[metric_fun, mape, cosine_similarity])
+
+        # visualise model
+        plot_model(model, to_file=output_loc + output_name + "_map.png")
         print(model.summary())
 
         # save model structure
         model_json = model.to_json()
         with open(output_loc+output_name+"_model.json", "w") as json_file:
             json_file.write(model_json)
-
+        sys.exit()
         # defining generators
         train_gen = batch_gen(train_batch_names, img_loc, label_loc, minibatch_size, epochs, n_intrinsic)
         valid_gen = batch_gen(valid_batch_names, img_loc, label_loc, minibatch_size, epochs, n_intrinsic)
         test_gen = batch_gen(test_batch_names, img_loc, label_loc, 1, 1, n_intrinsic)
 
         model.fit_generator(train_gen, validation_data=valid_gen, validation_steps=int(val_num/minibatch_size),
-                            epochs=epochs, verbose=1,
+                            epochs=epochs, verbose=2,
                             steps_per_epoch=int(train_num/minibatch_size), callbacks=[tensorboard])
 
         print("Evaluation")
-        metrics = model.evaluate_generator(test_gen, verbose=1, steps=int(test_num),
+        metrics = model.evaluate_generator(test_gen, verbose=2, steps=int(test_num),
                                            callbacks=[tensorboard])
 
         # save model weights
