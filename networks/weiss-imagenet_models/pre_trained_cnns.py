@@ -15,6 +15,7 @@ import re
 from random import shuffle
 import sys
 
+
 def sorted_nicely(l):
     """ Sort the given iterable in the way that humans expect."""
     convert = lambda text: int(text) if text.isdigit() else text
@@ -79,7 +80,6 @@ def _data_import(batch_name, image_location, label_location, separator=0):
         return images, labels
 
 
-
 def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs, separator):
     n_batches = len(batch_names)
     for _ in range(n_epochs):
@@ -88,14 +88,9 @@ def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs,
         while counter < n_batches:
             current_batch = batch_names[counter]
             counter += 1
-            if separator:
-                x_data, y_data1, y_data2 = _data_import(current_batch, image_location, label_location, separator)
-                for idx in range(0, len(x_data), batch_size):
-                    yield x_data[idx:idx+batch_size], (y_data1[idx:idx+batch_size], y_data2[idx:idx+batch_size])
-            else:
-                x_data, y_data = _data_import(current_batch, image_location, label_location, separator)
-                for idx in range(0, len(x_data), batch_size):
-                    yield x_data[idx:idx+batch_size], y_data[idx:idx+batch_size]
+            x_data, y_data_int, y_data_rot = _data_import(current_batch, image_location, label_location, separator)
+            for idx in range(0, len(x_data), batch_size):
+                yield x_data[idx:idx+batch_size], y_data_int[idx:idx+batch_size]
 
 
 def pre_built(network, inputs):
@@ -160,7 +155,7 @@ def metric_names(loss_name):
 def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         img_loc="../data/generated_images/", label_loc="../data/labels/", output_loc='./logs_practice/', gpu_idx=1):
     with tf.device('/device:GPU:'+str(gpu_idx)):
-        # data import
+        # data import settings
         proportion_of_test_data = 0.15
         test_batch_names, train_batch_names, valid_batch_names, test_num, train_num, val_num = set_split(
             img_loc, n_batch, proportion_of_test_data)
@@ -168,20 +163,20 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         print(test_batch_names, test_num)
         print(train_batch_names, train_num)
         print(valid_batch_names, val_num)
+
         # network settings
         img_length = 1920
         img_width = 1080
         channels = 3
         img_shape = (img_width, img_length, channels)
         n_intrinsic = 4
-        n_rot = 9
 
         # model definition
         img_input = Input(shape=img_shape, name='inputs')
         pre_trained_model = pre_built(network, img_input)
         flattening_layer = Flatten(name='flatten')(pre_trained_model)
         dense = Dense(4096, activation='tanh', name='fc1')(flattening_layer)
-        dense_intrinsic = Dense(512, activation='tanh', name='fc3-intrinsic')(flattening_layer)
+        dense_intrinsic = Dense(512, activation='tanh', name='fc3-intrinsic')(dense)
         dense_intrinsic = Dense(n_intrinsic, name='fc4-intrinsic')(dense_intrinsic)
         model = Model(inputs=img_input, outputs=dense_intrinsic)
 
@@ -206,7 +201,7 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         test_gen = batch_gen(test_batch_names, img_loc, label_loc, 1, 1, n_intrinsic)
 
         model.fit_generator(train_gen, validation_data=valid_gen, validation_steps=int(val_num/minibatch_size),
-                            epochs=epochs, verbose=2,
+                            epochs=epochs, verbose=1,
                             steps_per_epoch=int(train_num/minibatch_size), callbacks=[tensorboard])
 
         print("Evaluation\n"
