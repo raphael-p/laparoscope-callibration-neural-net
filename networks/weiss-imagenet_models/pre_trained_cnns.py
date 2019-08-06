@@ -99,19 +99,48 @@ def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs,
 
 
 def pre_built(network, inputs):
-    # select pre-built ImageNet network
     if network == "vgg":
         base_net = VGG19(include_top=False, weights='imagenet', pooling='max')
+        trainable_block_names = ['block5']
+        trainable_layers = ['global_max_pooling2d']
+        untrainable_layers = []
     elif network == "resnet":
         base_net = ResNet50(include_top=False, weights='imagenet', pooling='max')
+        trainable_block_names = ['res5', 'bn5', 'activation_4']
+        trainable_layers = ['add_13', 'add_14', 'add_15', 'global_max_pooling2d']
+        untrainable_layers = ['activation_4']
     elif network == "inception":
         base_net = InceptionV3(include_top=False, weights='imagenet', pooling='max')
+        trainable_block_names = []
+        trainable_layers = []
+        untrainable_layers = []
     elif network == "densenet":
         base_net = DenseNet201(include_top=False, weights='imagenet', pooling='max')
+        trainable_block_names = ['conv5']
+        trainable_layers = ['bn', 'relu', 'max_pool']
+        untrainable_layers = []
     else:
         raise ValueError("Invalid network name")
-    base_net.trainable = False
+
+    # defining which layers to train
+    for layer in base_net.layers:
+        if _is_untrainable(layer.name, trainable_block_names, trainable_layers, untrainable_layers):
+            layer.trainable = False
+            print(layer.name)
+        else:
+            print('*', layer.name)
     return base_net(inputs)
+
+
+def _is_untrainable(layer_name, block_names, inclusion_layers, exclusion_layers):
+    if layer_name in exclusion_layers:
+        return True
+    if layer_name in inclusion_layers:
+        return False
+    for name in block_names:
+        if name in layer_name:
+            return False
+    return True
 
 
 def metric_names(loss_name):
@@ -129,7 +158,7 @@ def metric_names(loss_name):
 
 
 def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
-        img_loc="../data/generated_images/", label_loc="../data/labels/", output_loc='./logs_practice/', gpu_idx=0):
+        img_loc="../data/generated_images/", label_loc="../data/labels/", output_loc='./logs_practice/', gpu_idx=1):
     with tf.device('/device:GPU:'+str(gpu_idx)):
         # data import
         proportion_of_test_data = 0.15
@@ -144,25 +173,25 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         img_width = 1080
         channels = 3
         img_shape = (img_width, img_length, channels)
-
         n_intrinsic = 4
         n_rot = 9
+
+        # model definition
         img_input = Input(shape=img_shape, name='inputs')
-        pre_trained_layer = pre_built(network, img_input)
-        flattening_layer = Flatten(name='flatten')(pre_trained_layer)
+        pre_trained_model = pre_built(network, img_input)
+        flattening_layer = Flatten(name='flatten')(pre_trained_model)
         dense = Dense(4096, activation='tanh', name='fc1')(flattening_layer)
         dense_intrinsic = Dense(512, activation='tanh', name='fc3-intrinsic')(flattening_layer)
-        dense_intrinsic = Dense(n_intrinsic, activation='tanh', name='fc4-intrinsic')(dense_intrinsic)
-
+        dense_intrinsic = Dense(n_intrinsic, name='fc4-intrinsic')(dense_intrinsic)
         model = Model(inputs=img_input, outputs=dense_intrinsic)
 
-        tensorboard = TensorBoard(log_dir=output_loc)
-        loss_fun, metric_fun_name, metric_fun = metric_names(loss)
+        loss_fun, metric_fun_name, metric_fun = metric_names(loss) # setting up which loss functions to use
         model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
                       loss=loss_fun,
                       metrics=[metric_fun, mape, cosine_similarity])
 
         # visualise model
+        tensorboard = TensorBoard(log_dir=output_loc)
         plot_model(model, to_file=output_loc + output_name + "_map.png")
         print(model.summary())
 
@@ -170,7 +199,7 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         model_json = model.to_json()
         with open(output_loc+output_name+"_model.json", "w") as json_file:
             json_file.write(model_json)
-        sys.exit()
+
         # defining generators
         train_gen = batch_gen(train_batch_names, img_loc, label_loc, minibatch_size, epochs, n_intrinsic)
         valid_gen = batch_gen(valid_batch_names, img_loc, label_loc, minibatch_size, epochs, n_intrinsic)
@@ -180,7 +209,8 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
                             epochs=epochs, verbose=2,
                             steps_per_epoch=int(train_num/minibatch_size), callbacks=[tensorboard])
 
-        print("Evaluation")
+        print("Evaluation\n"
+              "==========")
         metrics = model.evaluate_generator(test_gen, verbose=2, steps=int(test_num),
                                            callbacks=[tensorboard])
 
@@ -195,4 +225,4 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
 
 
 if __name__ == "__main__":
-    run(n_batch=3, epochs=1)
+    run(network='vgg', n_batch=3, epochs=1)
