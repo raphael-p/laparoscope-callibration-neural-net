@@ -88,9 +88,14 @@ def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs,
         while counter < n_batches:
             current_batch = batch_names[counter]
             counter += 1
-            x_data, y_data1, y_data2 = _data_import(current_batch, image_location, label_location, separator)
-            for idx in range(0, len(x_data), batch_size):
-                yield x_data[idx:idx+batch_size], (y_data1[idx:idx+batch_size], y_data2[idx:idx+batch_size])
+            if separator:
+                x_data, y_data1, y_data2 = _data_import(current_batch, image_location, label_location, separator)
+                for idx in range(0, len(x_data), batch_size):
+                    yield x_data[idx:idx+batch_size], (y_data1[idx:idx+batch_size], y_data2[idx:idx+batch_size])
+            else:
+                x_data, y_data = _data_import(current_batch, image_location, label_location, separator)
+                for idx in range(0, len(x_data), batch_size):
+                    yield x_data[idx:idx+batch_size], y_data[idx:idx+batch_size]
 
 
 def pre_built(network, inputs):
@@ -140,63 +145,22 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         channels = 3
         img_shape = (img_width, img_length, channels)
 
-        split_losses=False
-        if split_losses:
-            n_intrinsic = 4
-            n_rot = 9
-            img_input = Input(shape=img_shape, name='inputs')
-            pre_trained_layer = pre_built(network, img_input)
-            flattening_layer = Flatten(name='flatten')(pre_trained_layer)
-            dense = Dense(4096, activation='tanh', name='fc1')(flattening_layer)
-            dense = Dense(1024, activation='tanh', name='fc2')(dense)
-            dense_intrinsic = Dense(512, activation='tanh', name='fc3-intrinsic')(dense)
-            dense_intrinsic = Dense(n_intrinsic, activation='tanh', name='fc4-intrinsic')(dense_intrinsic)
-            dense_rotation = Dense(512, activation='tanh', name='fc3-rotation')(dense)
-            dense_rotation = Dense(n_rot, activation='tanh', name='fc4-rotation')(dense_rotation)
+        n_intrinsic = 4
+        n_rot = 9
+        img_input = Input(shape=img_shape, name='inputs')
+        pre_trained_layer = pre_built(network, img_input)
+        flattening_layer = Flatten(name='flatten')(pre_trained_layer)
+        dense = Dense(4096, activation='tanh', name='fc1')(flattening_layer)
+        dense_intrinsic = Dense(512, activation='tanh', name='fc3-intrinsic')(flattening_layer)
+        dense_intrinsic = Dense(n_intrinsic, activation='tanh', name='fc4-intrinsic')(dense_intrinsic)
 
-            model = Model(inputs=img_input, outputs=[dense_intrinsic, dense_rotation])
+        model = Model(inputs=img_input, outputs=dense_intrinsic)
 
-            tensorboard = TensorBoard(log_dir=output_loc)
-            loss_fun, metric_fun_name, metric_fun = metric_names(loss)
-            model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
-                          loss=[loss_fun, loss_fun],
-                          metrics=[metric_fun, mape, cosine_similarity])
-        else:
-            regression_values = 13
-
-            # select pre-built ImageNet network
-            if network == "vgg":
-                base_net = VGG19(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
-            elif network == "resnet":
-                base_net = ResNet50(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
-            elif network == "inception":
-                base_net = InceptionV3(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
-            elif network == "densenet":
-                base_net = DenseNet201(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
-            else:
-                raise ValueError("Invalid network name")
-            base_net.trainable = False
-
-            # add top part of network
-            flattening_layer = Flatten(name='flatten')
-            dense_layer_1 = Dense(4096, activation='tanh', name='fc1')
-            dense_layer_2 = Dense(4096, activation='tanh', name='fc2')
-            prediction_layer = Dense(regression_values, name='predictions')
-
-            # setup model and TensorBoard
-            model = Sequential([
-                base_net,
-                flattening_layer,
-                dense_layer_1,
-                dense_layer_2,
-                prediction_layer
-            ])
-            tensorboard = TensorBoard(log_dir=output_loc)
-            loss_fun, metric_fun_name, metric_fun = metric_names(loss)
-
-            model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
-                          loss=loss_fun,
-                          metrics=[metric_fun, mape, cosine_similarity])
+        tensorboard = TensorBoard(log_dir=output_loc)
+        loss_fun, metric_fun_name, metric_fun = metric_names(loss)
+        model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
+                      loss=loss_fun,
+                      metrics=[metric_fun, mape, cosine_similarity])
 
         # visualise model
         plot_model(model, to_file=output_loc + output_name + "_map.png")
