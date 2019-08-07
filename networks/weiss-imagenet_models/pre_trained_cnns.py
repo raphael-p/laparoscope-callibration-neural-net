@@ -69,7 +69,7 @@ def _data_import(batch_name, image_location, label_location, separator=0):
         next(csv_reader)  # skip the heading
         for line in csv_reader:
             labels.append(line)
-    labels = np.asarray(labels)
+    labels = np.asarray(labels, dtype=np.float32)
     if separator:
         labels1 = labels[:, 0:separator]
         labels2 = labels[:, separator:]
@@ -94,6 +94,7 @@ def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs,
 
 
 def pre_built(network, inputs):
+    # selecting network
     if network == "vgg":
         base_net = VGG19(include_top=False, weights='imagenet', pooling='max')
         trainable_block_names = ['block5']
@@ -121,9 +122,6 @@ def pre_built(network, inputs):
     for layer in base_net.layers:
         if _is_untrainable(layer.name, trainable_block_names, trainable_layers, untrainable_layers):
             layer.trainable = False
-            print(layer.name)
-        else:
-            print('*', layer.name)
     return base_net(inputs)
 
 
@@ -153,16 +151,18 @@ def metric_names(loss_name):
 
 
 def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
-        img_loc="../data/generated_images/", label_loc="../data/labels/", output_loc='./logs_practice/', gpu_idx=1):
+        img_loc="../data/generated_images/", label_loc="../data/labels/", output_loc='../models/logs_practice/', gpu_idx=1):
     with tf.device('/device:GPU:'+str(gpu_idx)):
         # data import settings
         proportion_of_test_data = 0.15
         test_batch_names, train_batch_names, valid_batch_names, test_num, train_num, val_num = set_split(
             img_loc, n_batch, proportion_of_test_data)
         output_name = list(filter(None, output_loc.split("/")))[-1]
-        print(test_batch_names, test_num)
-        print(train_batch_names, train_num)
-        print(valid_batch_names, val_num)
+        print("\nDataset\n"
+              "=======")
+        print('TEST batches (', test_num, 'images ):\n', test_batch_names)
+        print('\nTRAIN batches (', train_num, 'images ):\n', train_batch_names)
+        print('\nVALIDATION batches (', val_num, 'images ):\n', valid_batch_names, '\n')
 
         # network settings
         img_length = 1920
@@ -175,23 +175,26 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         img_input = Input(shape=img_shape, name='inputs')
         pre_trained_model = pre_built(network, img_input)
         flattening_layer = Flatten(name='flatten')(pre_trained_model)
-        dense = Dense(4096, activation='tanh', name='fc1')(flattening_layer)
-        dense_intrinsic = Dense(512, activation='tanh', name='fc3-intrinsic')(dense)
-        dense_intrinsic = Dense(n_intrinsic, name='fc4-intrinsic')(dense_intrinsic)
-        model = Model(inputs=img_input, outputs=dense_intrinsic)
+        dense = Dense(4096, activation='relu', name='fc1')(flattening_layer)
+        dense = Dense(1028, activation='relu', name='fc2')(dense)
+        dense = Dense(n_intrinsic, name='fc3')(dense)
+        model = Model(inputs=img_input, outputs=dense)
 
-        loss_fun, metric_fun_name, metric_fun = metric_names(loss) # setting up which loss functions to use
-        model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
+        loss_fun, metric_fun_name, metric_fun = metric_names(loss)  # setting up which loss functions to use
+        model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=0.0001),
                       loss=loss_fun,
                       metrics=[metric_fun, mape, cosine_similarity])
 
         # visualise model
+        print("\nModel\n"
+              "=====")
         tensorboard = TensorBoard(log_dir=output_loc)
         plot_model(model, to_file=output_loc + output_name + "_map.png")
         print(model.summary())
 
         # save model structure
         model_json = model.to_json()
+        print(output_loc+output_name+"_model.json")
         with open(output_loc+output_name+"_model.json", "w") as json_file:
             json_file.write(model_json)
 
@@ -200,11 +203,13 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         valid_gen = batch_gen(valid_batch_names, img_loc, label_loc, minibatch_size, epochs, n_intrinsic)
         test_gen = batch_gen(test_batch_names, img_loc, label_loc, 1, 1, n_intrinsic)
 
+        print("\nTraining\n"
+              "========")
         model.fit_generator(train_gen, validation_data=valid_gen, validation_steps=int(val_num/minibatch_size),
-                            epochs=epochs, verbose=1,
-                            steps_per_epoch=int(train_num/minibatch_size), callbacks=[tensorboard])
+                            epochs=epochs, verbose=1, steps_per_epoch=int(train_num/minibatch_size),
+                            callbacks=[tensorboard])
 
-        print("Evaluation\n"
+        print("\nEvaluation\n"
               "==========")
         metrics = model.evaluate_generator(test_gen, verbose=2, steps=int(test_num),
                                            callbacks=[tensorboard])

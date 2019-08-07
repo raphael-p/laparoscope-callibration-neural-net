@@ -23,16 +23,16 @@ def process():
     parser.add_argument('--minibatch', '-m', type=int, default=2,
                         help="size of training mini-batch; "
                              "default: 2")
-    parser.add_argument('--gpu', '-g', type=int, default=0,
+    parser.add_argument('--gpu', '-g', type=int, default=1,
                         help="index of machine GPU to train with; "
-                             "default: 0")
+                             "default: 1")
     parser.add_argument('--imagefolder', '-i', type=str, default='../data/generated_images/',
                         help="relative address of folder where generated images are stored; "
                              "default: ../data/generated_images/")
     parser.add_argument('--labelfolder', '-l', type=str, default='../data/labels/',
                         help="relative address of folder where labels are stored; "
                              "default: ../data/labels/")
-    parser.add_argument('--metrics', type=str, default='./logs_practice/',
+    parser.add_argument('--metrics', type=str, default='../models/logs_practice/',
                         help="relative address of folder where weights and logs are saved; "
                              "default: ./logs_practice/")
     arguments = parser.parse_args()
