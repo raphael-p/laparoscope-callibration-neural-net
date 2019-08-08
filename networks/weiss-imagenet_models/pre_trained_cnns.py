@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.applications import VGG19, ResNet50, InceptionV3, DenseNet201
-from tensorflow.keras.layers import Dense, Flatten, Input
+from tensorflow.keras.layers import Dense, Flatten, Input, LeakyReLU
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.models import Model
 from tensorflow.keras.losses import mae, mape, mse, cosine_similarity
@@ -97,7 +97,7 @@ def pre_built(network, inputs):
     # selecting network
     if network == "vgg":
         base_net = VGG19(include_top=False, weights='imagenet', pooling='max')
-        trainable_block_names = ['block5']
+        trainable_block_names = ['block5', 'block4', 'block3']
         trainable_layers = ['global_max_pooling2d']
         untrainable_layers = []
     elif network == "resnet":
@@ -175,10 +175,12 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         img_input = Input(shape=img_shape, name='inputs')
         pre_trained_model = pre_built(network, img_input)
         flattening_layer = Flatten(name='flatten')(pre_trained_model)
-        dense = Dense(4096, activation='relu', name='fc1')(flattening_layer)
-        dense = Dense(1028, activation='relu', name='fc2')(dense)
+        dense = Dense(2048, name='fc1')(flattening_layer)
+        dense = LeakyReLU(alpha=0.1, name='activation1')(dense)
+        dense = Dense(1028, name='fc2')(dense)
+        dense = LeakyReLU(alpha=0.1, name='activation2')(dense)
         dense = Dense(n_intrinsic, name='fc3')(dense)
-        model = Model(inputs=img_input, outputs=dense)
+        model = Model(inputs=img_input, outputs=dense, name='CalibNet_'+network)
 
         loss_fun, metric_fun_name, metric_fun = metric_names(loss)  # setting up which loss functions to use
         model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=0.0001),
@@ -211,8 +213,7 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
 
         print("\nEvaluation\n"
               "==========")
-        metrics = model.evaluate_generator(test_gen, verbose=2, steps=int(test_num),
-                                           callbacks=[tensorboard])
+        metrics = model.evaluate_generator(test_gen, verbose=2, steps=int(test_num)-2, callbacks=[tensorboard])
 
         # save model weights
         with open(output_loc+output_name+"_eval.csv", 'a') as f:

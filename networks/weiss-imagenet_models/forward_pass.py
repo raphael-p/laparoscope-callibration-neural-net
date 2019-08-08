@@ -58,10 +58,16 @@ def predict(img_loc="../data/prediction_images/", batch_name='batch_pred', label
             print("\nFlatten Layer\n"
                   "-------------")
             print(list(layer_outs[0][0]))
-            print("\nDense 4096 Layer (preview)\n"
+            print("\nDense 4096 Layer\n"
                   "----------------")
             print(list(layer_outs[1][0][0:512]))
             print(list(layer_outs[1][0][512:1028]))
+            print(list(layer_outs[1][0][1028:1536]))
+            print(list(layer_outs[1][0][1536:2048]))
+            print(list(layer_outs[1][0][2048:2560]))
+            print(list(layer_outs[1][0][2560:3072]))
+            print(list(layer_outs[1][0][3072:3584]))
+            print(list(layer_outs[1][0][3584:4096]))
             print("\nDense 512 Layer\n"
                   "---------------")
             print(list(layer_outs[2][0]))
