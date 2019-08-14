@@ -10,8 +10,9 @@ from tensorflow.keras import backend as K
 def predict(img_loc="../data/prediction_images/", batch_name='batch_pred', label_loc="../data/prediction_labels/",
             model_loc='../models/vgg_3heads/', n_shown=3, show_layers=True, gpu_idx=2):
     # model import parameters
-    weight_loc = model_name+"/"+model_name+"_weights.h5"
-    model_loc = model_name+"/"+model_name+"_model.json"
+    model_name = list(filter(None, model_loc.split("/")))[-1]
+    weight_loc = model_loc+model_name+"_weights.h5"
+    model_loc = model_loc+model_name+"_model.json"
 
     # data import
     images, foc_labels, princ_labels, rot_labels, trans_labels = _data_import(batch_name, img_loc, label_loc, n_intrinsic)

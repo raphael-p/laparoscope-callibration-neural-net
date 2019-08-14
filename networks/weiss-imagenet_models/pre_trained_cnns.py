@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.applications import VGG19, ResNet50, InceptionV3, DenseNet201
-from tensorflow.keras.layers import Dense, Flatten, Input
+from tensorflow.keras.layers import Dense, Flatten, Input, LeakyReLU
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.models import Model
 from tensorflow.keras.losses import mae, mape, mse, cosine_similarity
@@ -62,7 +62,6 @@ def _data_import(batch_name, image_location, label_location):
         img = cvtColor(imread(root+name), COLOR_BGR2RGB)
         images.append(img)
     images = np.asarray(images, dtype=np.uint8)
-    #print(filenames[300], labels_foc[300], labels_princ[300] labels_rot[300], labels_trans[300])
     return images, labels_foc, labels_princ, labels_rot, labels_trans
 
 
@@ -86,8 +85,10 @@ def pre_built(network, inputs):
     # select pre-built ImageNet network
     if network == "vgg":
         base_net = VGG19(include_top=False, weights='imagenet', pooling='max')
-        trainable_block_names = ['block5', 'block4']
-        trainable_layers = ['global_max_pooling2d']
+        #trainable_block_names = ['block5', 'block4']
+        trainable_block_names = []
+        #trainable_layers = ['global_max_pooling2d']
+        trainable_layers = []
         untrainable_layers = []
     elif network == "resnet":
         base_net = ResNet50(include_top=False, weights='imagenet', pooling='max')
@@ -103,6 +104,17 @@ def pre_built(network, inputs):
         if _is_untrainable(layer.name, trainable_block_names, trainable_layers, untrainable_layers):
             layer.trainable = False
     return base_net(inputs)
+
+
+def _is_untrainable(layer_name, block_names, inclusion_layers, exclusion_layers):
+    if layer_name in exclusion_layers:
+        return True
+    if layer_name in inclusion_layers:
+        return False
+    for name in block_names:
+        if name in layer_name:
+            return False
+    return True
 
 
 def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, gpu_idx=3,
@@ -153,9 +165,10 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, gpu_idx=3,
         dense_translation = LeakyReLU(alpha=0.01, name='activation_')(dense_translation)
         dense_translation = Dense(n_translation, name='translation-fc_out')(dense_translation)
         # model compilation
-        model = Model(inputs=img_input, outputs=[dense_intrinsic, dense_rotation, dense_translation], name='CalibNet_'+network)
-        model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=0.0001),
-                      loss=[mse, mse, mse, mse],
+        model = Model(inputs=img_input, outputs=[dense_focal, dense_principal, dense_rotation, dense_translation],
+                      name='CalibNet_'+network)
+        model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
+                      loss=mse,
                       metrics=[mae, mape, cosine_similarity])
         # model visualisation
         print("\nModel\n"
@@ -185,7 +198,7 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, gpu_idx=3,
         # save model weights
         with open(output_loc+output_name+"_eval.csv", 'a') as f:
             writer = csv.writer(f)
-            writer.writerow([loss, "MAE", "MAPE", "cos_sim"])
+            writer.writerow(["MSE", "MAE", "MAPE", "cos_sim"])
             writer.writerow([metrics[0], metrics[1], metrics[2], metrics[3]])
         model.save_weights(output_loc+output_name+"_weights.h5")
 
@@ -193,4 +206,4 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, gpu_idx=3,
 
 
 if __name__ == "__main__":
-    run(network='vgg', n_batch=3, epochs=1, img_loc="../data_cut/generated_images/", label_loc="../data_cut/labels/")
+    run(network='vgg', n_batch=3, epochs=1, gpu_idx=3)
