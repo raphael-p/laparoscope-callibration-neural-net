@@ -8,7 +8,7 @@ def process():
     parser.add_argument('--basenet', '-n', type=str, default='vgg',
                         help="base network to use, pre-trained on ImageNet; "
                              "options: vgg, resnet, inception, densenet "
-                             "(VGG19, ResNet50, InceptionV3, DenseNet201 respectively); "
+                             "(VGG19, ResNet50, DenseNet201 respectively); "
                              "default: vgg")
     parser.add_argument('--loss', type=str, default='MSE',
                         help="loss function to use for network; "

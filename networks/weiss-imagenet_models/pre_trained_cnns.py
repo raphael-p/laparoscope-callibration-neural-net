@@ -15,12 +15,6 @@ import re
 from random import shuffle
 import sys
 
-def sorted_nicely(l):
-    """ Sort the given iterable in the way that humans expect."""
-    convert = lambda text: int(text) if text.isdigit() else text
-    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
-    return sorted(l, key=alphanum_key)
-
 
 def set_split(img_loc, num, split):
     # split batches into train and test batches
@@ -34,7 +28,6 @@ def set_split(img_loc, num, split):
     test_set = batch_names[:n_test]
     valid_set = batch_names[n_test:2*n_test]
     train_set = batch_names[2*n_test:num]
-
     # count files in train and test sets
     train_count = 0
     test_count = 0
@@ -48,19 +41,7 @@ def set_split(img_loc, num, split):
     return test_set, train_set, valid_set, test_count, train_count, valid_count
 
 
-def _data_import(batch_name, image_location, label_location, separator=0):
-    # image import
-    images = []
-    root = image_location+batch_name+'/'
-    files = next(os.walk(root))[2]
-    for name in tqdm(sorted_nicely(files), desc="importing from "+root):
-        try:
-            img = cvtColor(imread(root+name), COLOR_BGR2RGB)
-            images.append(img)
-        except error:
-            continue
-    images = np.asarray(images, dtype=np.uint8)
-
+def _data_import(batch_name, image_location, label_location, n_int):
     # label import
     labels = []
     with open(label_location+batch_name+'.csv', 'rt') as f:
@@ -69,18 +50,22 @@ def _data_import(batch_name, image_location, label_location, separator=0):
         for line in csv_reader:
             labels.append(line)
     labels = np.asarray(labels)
-    if separator:
-        labels1 = labels[:, 0:separator]
-        labels2 = labels[:, separator:]
-        print("import complete.")
-        return images, labels1, labels2
-    else:
-        print("import complete.")
-        return images, labels
+    filenames = labels[:, 0]
+    labels_int = labels[:, 1:n_int+1].astype(np.float32)
+    labels_rot = labels[:, n_int+1:n_int+10].astype(np.float32)
+    labels_trans = labels[:, n_int+10:].astype(np.float32)
+    # image import
+    images = []
+    root = image_location+batch_name+'/'
+    for name in tqdm(filenames):
+        img = cvtColor(imread(root+name), COLOR_BGR2RGB)
+        images.append(img)
+    images = np.asarray(images, dtype=np.uint8)
+    #print(filenames[300], labels_int[300], labels_rot[300], labels_trans[300])
+    return images, labels_int, labels_rot, labels_trans
 
 
-
-def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs, separator):
+def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs, n_int):
     n_batches = len(batch_names)
     for _ in range(n_epochs):
         shuffle(batch_names)
@@ -88,24 +73,32 @@ def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs,
         while counter < n_batches:
             current_batch = batch_names[counter]
             counter += 1
-            x_data, y_data1, y_data2 = _data_import(current_batch, image_location, label_location, separator)
-            for idx in range(0, len(x_data), batch_size):
-                yield x_data[idx:idx+batch_size], (y_data1[idx:idx+batch_size], y_data2[idx:idx+batch_size])
+            x, y_int, y_rot, y_trans = _data_import(current_batch, image_location, label_location, n_int)
+            for idx in range(0, len(x), batch_size):
+                yield x[idx:idx+batch_size], \
+                      (y_int[idx:idx+batch_size], y_rot[idx:idx+batch_size], y_trans[idx:idx+batch_size])
 
 
 def pre_built(network, inputs):
     # select pre-built ImageNet network
     if network == "vgg":
         base_net = VGG19(include_top=False, weights='imagenet', pooling='max')
+        trainable_block_names = ['block5', 'block4']
+        trainable_layers = ['global_max_pooling2d']
+        untrainable_layers = []
     elif network == "resnet":
         base_net = ResNet50(include_top=False, weights='imagenet', pooling='max')
-    elif network == "inception":
-        base_net = InceptionV3(include_top=False, weights='imagenet', pooling='max')
+        trainable_block_names = ['res5', 'bn5', 'activation_4']
+        trainable_layers = ['add_13', 'add_14', 'add_15', 'global_max_pooling2d']
+        untrainable_layers = ['activation_4']
     elif network == "densenet":
         base_net = DenseNet201(include_top=False, weights='imagenet', pooling='max')
     else:
         raise ValueError("Invalid network name")
-    base_net.trainable = False
+    # defining which layers to train
+    for layer in base_net.layers:
+        if _is_untrainable(layer.name, trainable_block_names, trainable_layers, untrainable_layers):
+            layer.trainable = False
     return base_net(inputs)
 
 
@@ -123,85 +116,63 @@ def metric_names(loss_name):
     return loss_fun, metric_fun_name, metric_fun
 
 
-def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
-        img_loc="../data/generated_images/", label_loc="../data/labels/", output_loc='./logs_practice/', gpu_idx=0):
+def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE", gpu_idx=3,
+        img_loc="../data/generated_images/", label_loc="../data/labels/", output_loc='../models/logs_practice/'):
     with tf.device('/device:GPU:'+str(gpu_idx)):
         # data import
         proportion_of_test_data = 0.15
         test_batch_names, train_batch_names, valid_batch_names, test_num, train_num, val_num = set_split(
             img_loc, n_batch, proportion_of_test_data)
         output_name = list(filter(None, output_loc.split("/")))[-1]
-        print(test_batch_names, test_num)
-        print(train_batch_names, train_num)
-        print(valid_batch_names, val_num)
+        print("\nDataset\n"
+              "=======")
+        print('TEST batches (', test_num, 'images ):\n', test_batch_names)
+        print('\nTRAIN batches (', train_num, 'images ):\n', train_batch_names)
+        print('\nVALIDATION batches (', val_num, 'images ):\n', valid_batch_names, '\n')
         # network settings
         img_length = 1920
         img_width = 1080
         channels = 3
         img_shape = (img_width, img_length, channels)
+        n_intrinsic = 2
+        n_rotation = 9
+        n_translation = 3
 
-        split_losses=False
-        if split_losses:
-            n_intrinsic = 4
-            n_rot = 9
-            img_input = Input(shape=img_shape, name='inputs')
-            pre_trained_layer = pre_built(network, img_input)
-            flattening_layer = Flatten(name='flatten')(pre_trained_layer)
-            dense = Dense(4096, activation='tanh', name='fc1')(flattening_layer)
-            dense = Dense(1024, activation='tanh', name='fc2')(dense)
-            dense_intrinsic = Dense(512, activation='tanh', name='fc3-intrinsic')(dense)
-            dense_intrinsic = Dense(n_intrinsic, activation='tanh', name='fc4-intrinsic')(dense_intrinsic)
-            dense_rotation = Dense(512, activation='tanh', name='fc3-rotation')(dense)
-            dense_rotation = Dense(n_rot, activation='tanh', name='fc4-rotation')(dense_rotation)
+        # model definition
+        #   common block
+        img_input = Input(shape=img_shape, name='inputs')
+        pre_trained_model = pre_built(network, img_input)
+        flattening_layer = Flatten(name='flatten')(pre_trained_model)
+        dense = Dense(2048, name='fc1')(flattening_layer)
+        dense = LeakyReLU(alpha=0.01, name='activation1')(dense)
+        dense = Dense(1028, name='fc2')(dense)
+        dense = LeakyReLU(alpha=0.01, name='activation2')(dense)
+        #   intrinsic block
+        dense_intrinsic = Dense(512, name='int-fc1')(dense)
+        dense_intrinsic = LeakyReLU(alpha=0.01, name='activation3')(dense_intrinsic)
+        dense_intrinsic = Dense(n_intrinsic, name='int-fc_out')(dense_intrinsic)
+        #   rotation block
+        dense_rotation = Dense(512, name='rot-fc1')(dense)
+        dense_rotation = LeakyReLU(alpha=0.01, name='activation4')(dense_rotation)
+        dense_rotation = Dense(n_rotation, name='rot-fc_out')(dense_rotation)
+        #   translation block
+        dense_translation = Dense(512, name='trans-fc1')(dense)
+        dense_translation = LeakyReLU(alpha=0.01, name='activation5')(dense_translation)
+        dense_translation = Dense(n_translation, name='trans-fc_out')(dense_translation)
 
-            model = Model(inputs=img_input, outputs=[dense_intrinsic, dense_rotation])
+        # model compilation
+        model = Model(inputs=img_input, outputs=[dense_intrinsic, dense_rotation, dense_translation], name='CalibNet_'+network)
+        loss_fun, metric_fun_name, metric_fun = metric_names(loss)  # setting up which loss functions to use
+        model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=0.0001),
+                      loss=[loss_fun, loss_fun, loss_fun],
+                      metrics=[metric_fun, mape, cosine_similarity])
 
-            tensorboard = TensorBoard(log_dir=output_loc)
-            loss_fun, metric_fun_name, metric_fun = metric_names(loss)
-            model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
-                          loss=[loss_fun, loss_fun],
-                          metrics=[metric_fun, mape, cosine_similarity])
-        else:
-            regression_values = 13
-
-            # select pre-built ImageNet network
-            if network == "vgg":
-                base_net = VGG19(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
-            elif network == "resnet":
-                base_net = ResNet50(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
-            elif network == "inception":
-                base_net = InceptionV3(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
-            elif network == "densenet":
-                base_net = DenseNet201(input_shape=img_shape, include_top=False, weights='imagenet', pooling='max')
-            else:
-                raise ValueError("Invalid network name")
-            base_net.trainable = False
-
-            # add top part of network
-            flattening_layer = Flatten(name='flatten')
-            dense_layer_1 = Dense(4096, activation='tanh', name='fc1')
-            dense_layer_2 = Dense(4096, activation='tanh', name='fc2')
-            prediction_layer = Dense(regression_values, name='predictions')
-
-            # setup model and TensorBoard
-            model = Sequential([
-                base_net,
-                flattening_layer,
-                dense_layer_1,
-                dense_layer_2,
-                prediction_layer
-            ])
-            tensorboard = TensorBoard(log_dir=output_loc)
-            loss_fun, metric_fun_name, metric_fun = metric_names(loss)
-
-            model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(),
-                          loss=loss_fun,
-                          metrics=[metric_fun, mape, cosine_similarity])
-
-        # visualise model
+        # model visualisation
+        print("\nModel\n"
+              "=====")
+        tensorboard = TensorBoard(log_dir=output_loc)
         plot_model(model, to_file=output_loc + output_name + "_map.png")
         print(model.summary())
-
         # save model structure
         model_json = model.to_json()
         with open(output_loc+output_name+"_model.json", "w") as json_file:
@@ -213,8 +184,8 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
         test_gen = batch_gen(test_batch_names, img_loc, label_loc, 1, 1, n_intrinsic)
 
         model.fit_generator(train_gen, validation_data=valid_gen, validation_steps=int(val_num/minibatch_size),
-                            epochs=epochs, verbose=2,
-                            steps_per_epoch=int(train_num/minibatch_size), callbacks=[tensorboard])
+                            epochs=epochs, verbose=2, steps_per_epoch=int(train_num/minibatch_size),
+                            callbacks=[tensorboard])
 
         print("Evaluation")
         metrics = model.evaluate_generator(test_gen, verbose=2, steps=int(test_num),
@@ -231,4 +202,4 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE",
 
 
 if __name__ == "__main__":
-    run(n_batch=3, epochs=1)
+    run(network='vgg', n_batch=3, epochs=1, img_loc="../data_cut/generated_images/", label_loc="../data_cut/labels/")
