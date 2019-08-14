@@ -13,9 +13,6 @@ def process():
     parser.add_argument('--show', '-s', action='store_true',
                         help="gives detailed view of layer outputs"
                              "default: False")
-    parser.add_argument('--principal', '-p', action='store_false',
-                        help="generates data without principal point labels"
-                             "default: True")
     parser.add_argument('--gpu', '-g', type=int, default=2,
                         help="index of machine GPU to train with; "
                              "default: 2")
@@ -33,7 +30,7 @@ def process():
                         + "See help: -h or --help")
 
     predict(model_loc=arguments.network_location, n_shown=arguments.number,
-            show_layers=arguments.show, gpu_idx=arguments.gpu, principal_point=arguments.principal,
+            show_layers=arguments.show, gpu_idx=arguments.gpu,
             img_loc=arguments.imagefolder, label_loc=arguments.labelfolder)
 
 

@@ -41,7 +41,7 @@ def set_split(img_loc, num, split):
     return test_set, train_set, valid_set, test_count, train_count, valid_count
 
 
-def _data_import(batch_name, image_location, label_location, n_int):
+def _data_import(batch_name, image_location, label_location):
     # label import
     labels = []
     with open(label_location+batch_name+'.csv', 'rt') as f:
@@ -51,9 +51,10 @@ def _data_import(batch_name, image_location, label_location, n_int):
             labels.append(line)
     labels = np.asarray(labels)
     filenames = labels[:, 0]
-    labels_int = labels[:, 1:n_int+1].astype(np.float32)
-    labels_rot = labels[:, n_int+1:n_int+10].astype(np.float32)
-    labels_trans = labels[:, n_int+10:].astype(np.float32)
+    labels_foc = labels[:, 1:3].astype(np.float32)
+    labels_princ = labels[:, 3:5].astype(np.float32)
+    labels_rot = labels[:, 5:14].astype(np.float32)
+    labels_trans = labels[:, 14:].astype(np.float32)
     # image import
     images = []
     root = image_location+batch_name+'/'
@@ -61,11 +62,11 @@ def _data_import(batch_name, image_location, label_location, n_int):
         img = cvtColor(imread(root+name), COLOR_BGR2RGB)
         images.append(img)
     images = np.asarray(images, dtype=np.uint8)
-    #print(filenames[300], labels_int[300], labels_rot[300], labels_trans[300])
-    return images, labels_int, labels_rot, labels_trans
+    #print(filenames[300], labels_foc[300], labels_princ[300] labels_rot[300], labels_trans[300])
+    return images, labels_foc, labels_princ, labels_rot, labels_trans
 
 
-def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs, n_int):
+def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs):
     n_batches = len(batch_names)
     for _ in range(n_epochs):
         shuffle(batch_names)
@@ -73,10 +74,12 @@ def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs,
         while counter < n_batches:
             current_batch = batch_names[counter]
             counter += 1
-            x, y_int, y_rot, y_trans = _data_import(current_batch, image_location, label_location, n_int)
+            x, y_foc, y_princ, y_rot, y_trans = _data_import(current_batch, image_location, label_location)
             for idx in range(0, len(x), batch_size):
-                yield x[idx:idx+batch_size], \
-                      (y_int[idx:idx+batch_size], y_rot[idx:idx+batch_size], y_trans[idx:idx+batch_size])
+                    yield x[idx:idx+batch_size], (y_foc[idx:idx+batch_size],
+                                                  y_princ[idx:idx + batch_size],
+                                                  y_rot[idx:idx+batch_size],
+                                                  y_trans[idx:idx+batch_size])
 
 
 def pre_built(network, inputs):
@@ -102,21 +105,7 @@ def pre_built(network, inputs):
     return base_net(inputs)
 
 
-def metric_names(loss_name):
-    if loss_name == "MSE":
-        loss_fun = mse
-        metric_fun_name = "MAE"
-        metric_fun = mae
-    elif loss_name == "MAE":
-        loss_fun = mae
-        metric_fun_name = "MSE"
-        metric_fun = mse
-    else:
-        raise ValueError("loss defined incorrectly, choose mse or mae")
-    return loss_fun, metric_fun_name, metric_fun
-
-
-def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE", gpu_idx=3,
+def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, gpu_idx=3,
         img_loc="../data/generated_images/", label_loc="../data/labels/", output_loc='../models/logs_practice/'):
     with tf.device('/device:GPU:'+str(gpu_idx)):
         # data import
@@ -134,10 +123,10 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE", gpu_i
         img_width = 1080
         channels = 3
         img_shape = (img_width, img_length, channels)
-        n_intrinsic = 2
+        n_focal = 2
+        n_principal = 2
         n_rotation = 9
         n_translation = 3
-
         # model definition
         #   common block
         img_input = Input(shape=img_shape, name='inputs')
@@ -147,26 +136,27 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE", gpu_i
         dense = LeakyReLU(alpha=0.01, name='activation1')(dense)
         dense = Dense(1028, name='fc2')(dense)
         dense = LeakyReLU(alpha=0.01, name='activation2')(dense)
-        #   intrinsic block
-        dense_intrinsic = Dense(512, name='int-fc1')(dense)
-        dense_intrinsic = LeakyReLU(alpha=0.01, name='activation3')(dense_intrinsic)
-        dense_intrinsic = Dense(n_intrinsic, name='int-fc_out')(dense_intrinsic)
+        #   focal block
+        dense_focal = Dense(512, name='focal-fc1')(dense)
+        dense_focal = LeakyReLU(alpha=0.01, name='activation_focal')(dense_focal)
+        dense_focal = Dense(n_focal, name='focal-fc_out')(dense_focal)
+        #   principal block
+        dense_principal = Dense(512, name='principal-fc1')(dense)
+        dense_principal = LeakyReLU(alpha=0.01, name='activation_principal')(dense_principal)
+        dense_principal = Dense(n_principal, name='principal-fc_out')(dense_principal)
         #   rotation block
-        dense_rotation = Dense(512, name='rot-fc1')(dense)
-        dense_rotation = LeakyReLU(alpha=0.01, name='activation4')(dense_rotation)
-        dense_rotation = Dense(n_rotation, name='rot-fc_out')(dense_rotation)
+        dense_rotation = Dense(512, name='rotation-fc1')(dense)
+        dense_rotation = LeakyReLU(alpha=0.01, name='activation_rotation')(dense_rotation)
+        dense_rotation = Dense(n_rotation, name='rotation-fc_out')(dense_rotation)
         #   translation block
-        dense_translation = Dense(512, name='trans-fc1')(dense)
-        dense_translation = LeakyReLU(alpha=0.01, name='activation5')(dense_translation)
-        dense_translation = Dense(n_translation, name='trans-fc_out')(dense_translation)
-
+        dense_translation = Dense(512, name='translation-fc1')(dense)
+        dense_translation = LeakyReLU(alpha=0.01, name='activation_')(dense_translation)
+        dense_translation = Dense(n_translation, name='translation-fc_out')(dense_translation)
         # model compilation
         model = Model(inputs=img_input, outputs=[dense_intrinsic, dense_rotation, dense_translation], name='CalibNet_'+network)
-        loss_fun, metric_fun_name, metric_fun = metric_names(loss)  # setting up which loss functions to use
         model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=0.0001),
-                      loss=[loss_fun, loss_fun, loss_fun],
-                      metrics=[metric_fun, mape, cosine_similarity])
-
+                      loss=[mse, mse, mse, mse],
+                      metrics=[mae, mape, cosine_similarity])
         # model visualisation
         print("\nModel\n"
               "=====")
@@ -177,24 +167,25 @@ def run(network="vgg", n_batch=60, epochs=5, minibatch_size=2, loss="MSE", gpu_i
         model_json = model.to_json()
         with open(output_loc+output_name+"_model.json", "w") as json_file:
             json_file.write(model_json)
-        sys.exit()
         # defining generators
-        train_gen = batch_gen(train_batch_names, img_loc, label_loc, minibatch_size, epochs, n_intrinsic)
-        valid_gen = batch_gen(valid_batch_names, img_loc, label_loc, minibatch_size, epochs, n_intrinsic)
-        test_gen = batch_gen(test_batch_names, img_loc, label_loc, 1, 1, n_intrinsic)
-
+        train_gen = batch_gen(train_batch_names, img_loc, label_loc, minibatch_size, epochs)
+        valid_gen = batch_gen(valid_batch_names, img_loc, label_loc, minibatch_size, epochs)
+        test_gen = batch_gen(test_batch_names, img_loc, label_loc, 1, 1)
+        # model training
+        print("\nTraining\n"
+              "========")
         model.fit_generator(train_gen, validation_data=valid_gen, validation_steps=int(val_num/minibatch_size),
                             epochs=epochs, verbose=2, steps_per_epoch=int(train_num/minibatch_size),
                             callbacks=[tensorboard])
-
-        print("Evaluation")
+        # model evaluation
+        print("\nEvaluation\n"
+              "==========")
         metrics = model.evaluate_generator(test_gen, verbose=2, steps=int(test_num),
                                            callbacks=[tensorboard])
-
         # save model weights
         with open(output_loc+output_name+"_eval.csv", 'a') as f:
             writer = csv.writer(f)
-            writer.writerow([loss, metric_fun_name, "MAPE", "cos_sim"])
+            writer.writerow([loss, "MAE", "MAPE", "cos_sim"])
             writer.writerow([metrics[0], metrics[1], metrics[2], metrics[3]])
         model.save_weights(output_loc+output_name+"_weights.h5")
 

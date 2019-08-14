@@ -10,10 +10,6 @@ def process():
                              "options: vgg, resnet, inception, densenet "
                              "(VGG19, ResNet50, DenseNet201 respectively); "
                              "default: vgg")
-    parser.add_argument('--loss', type=str, default='MSE',
-                        help="loss function to use for network; "
-                             "options: MSE, MAE; "
-                             "default: MSE")
     parser.add_argument('--batch', '-b', type=int, default=60,
                         help="number of batches train with; "
                              "default: 60")
@@ -52,7 +48,7 @@ def process():
 
     run(network=arguments.basenet, n_batch=arguments.batch, epochs=arguments.epochs, minibatch_size=arguments.minibatch,
         img_loc=arguments.imagefolder, label_loc=arguments.labelfolder, output_loc=arguments.metrics,
-        gpu_idx=arguments.gpu, loss=arguments.loss)
+        gpu_idx=arguments.gpu, has_principal=arguments.principal)
 
 
 if __name__ == "__main__":
