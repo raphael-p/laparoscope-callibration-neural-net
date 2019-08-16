@@ -1,6 +1,6 @@
 from argparse import ArgumentParser
 import os
-from pre_trained_cnns import run
+from pre_trained_cnns import run_model
 
 
 def process():
@@ -46,9 +46,9 @@ def process():
                         + "' is not a valid directory. Please define a valid location. "
                         + "See help: -h or --help")
 
-    run(network=arguments.basenet, n_batch=arguments.batch, epochs=arguments.epochs, minibatch_size=arguments.minibatch,
-        img_loc=arguments.imagefolder, label_loc=arguments.labelfolder, output_loc=arguments.metrics,
-        gpu_idx=arguments.gpu)
+    run_model(network=arguments.basenet, n_batch=arguments.batch, epochs=arguments.epochs,
+              minibatch_size=arguments.minibatch, img_loc=arguments.imagefolder, label_loc=arguments.labelfolder,
+              output_loc=arguments.metrics, gpu_idx=arguments.gpu)
 
 
 if __name__ == "__main__":

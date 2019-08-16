@@ -1,26 +1,27 @@
 from pre_trained_cnns import _data_import
+import tensorflow as tf
 from tensorflow.keras.models import model_from_json, load_model
 import json
 import sys
 import random
+import os
 import numpy as np
 from tensorflow.keras import backend as K
 
 
 def predict(img_loc="../data/prediction_images/", batch_name='batch_pred', label_loc="../data/prediction_labels/",
-            model_loc='../models/vgg_3heads/', n_shown=3, show_layers=True, gpu_idx=2):
+            model_loc='../models/vgg_3heads/', n_shown=5, show_layers=False, gpu_idx=2):
     # model import parameters
-    model_name = list(filter(None, model_loc.split("/")))[-1]
-    weight_loc = model_loc+model_name+"_weights.h5"
-    model_loc = model_loc+model_name+"_model.json"
+    model_name = os.path.split(os.path.dirname(model_loc))[-1]
+    weight_loc = os.path.join(model_loc, model_name +"_weights.h5")
+    model_loc = os.path.join(model_loc, model_name +"_model.json")
 
     # data import
-    images, foc_labels, princ_labels, rot_labels, trans_labels = _data_import(batch_name, img_loc, label_loc, n_intrinsic)
+    images, foc_labels, rot_labels, trans_labels = _data_import(batch_name, img_loc, label_loc)
     # pick random images
     sample = random.sample(range(0, len(images)), n_shown)
     images = images[sample]
     foc_labels = foc_labels[sample]
-    princ_label = sprinc_labels[sample]
     rot_labels = rot_labels[sample]
     trans_labels = trans_labels[sample]
 
@@ -64,17 +65,9 @@ def predict(img_loc="../data/prediction_images/", batch_name='batch_pred', label
                       "------------------")
                 print(list(foc_labels[idx]))
 
-                print("\nPrincipal Output Layer\n"
-                      "----------------------")
-                print(list(layer_outs[3][0]))
-
-                print("\nPrincipal Ground Truth\n"
-                      "----------------------")
-                print(list(princ_labels[idx]))
-
                 print("\nRotation Output Layer\n"
                       "---------------------")
-                print(list(layer_outs[4][0]))
+                print(list(layer_outs[3][0]))
 
                 print("\nRotation Ground Truth\n"
                       "---------------------")
@@ -82,7 +75,7 @@ def predict(img_loc="../data/prediction_images/", batch_name='batch_pred', label
 
                 print("\nTranslation Output Layer\n"
                       "------------------------")
-                print(list(layer_outs[5][0]))
+                print(list(layer_outs[4][0]))
 
                 print("\nTranslation Ground Truth\n"
                       "------------------------")
@@ -92,13 +85,15 @@ def predict(img_loc="../data/prediction_images/", batch_name='batch_pred', label
     if not show_layers:
         # display
         print("\n\n\n--------------------PREDICTIONS--------------------\n")
+        print(sample)
         for idx in range(n_shown):
             print("PREDICTED\n",
                   list(pred[0][idx]),
                   list(pred[1][idx]),
-                  list(pred[2][idx]))
+                  list(pred[2][idx])
+                  )
             print("EXPECTED\n",
-                  list(int_labels[idx]),
+                  list(foc_labels[idx]),
                   list(rot_labels[idx]),
                   list(trans_labels[idx]), "\n")
         return
