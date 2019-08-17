@@ -7,12 +7,9 @@ def process():
     parser = ArgumentParser(description="Run predictions from trained model")
     parser.add_argument('network_loc', type=str,
                         help="location of network save file")
-    parser.add_argument('--number', '-n', type=int, default=10,
+    parser.add_argument('--number', '-n', type=int, default=0,
                         help="number of images to run predictions on, "
-                             "default: 10")
-    parser.add_argument('--show', '-s', action='store_true',
-                        help="gives detailed view of layer outputs"
-                             "default: False")
+                             "default: 0 (all)")
     parser.add_argument('--gpu', '-g', type=int, default=2,
                         help="index of machine GPU to train with; "
                              "default: 2")
@@ -29,8 +26,7 @@ def process():
                         + "' is not a valid directory. Please define a valid location. "
                         + "See help: -h or --help")
 
-    predict(model_loc=arguments.network_loc, n_shown=arguments.number,
-            show_layers=arguments.show, gpu_idx=arguments.gpu,
+    predict(model_loc=arguments.network_loc, n_shown=arguments.number, gpu_idx=arguments.gpu,
             img_loc=arguments.imagefolder, label_loc=arguments.labelfolder)
 
 

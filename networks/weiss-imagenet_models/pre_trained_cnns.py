@@ -53,8 +53,16 @@ def _data_import(batch_name, image_location, label_location):
     labels = np.asarray(labels)
     filenames = labels[:, 0]
     labels_foc = labels[:, 1:3].astype(np.float32)
-    labels_rot = labels[:, 3:12].astype(np.float32)
-    labels_trans = labels[:, 12:].astype(np.float32)
+    if len(labels[0]) == 15:
+        labels_princ = None
+        labels_rot = labels[:, 3:12].astype(np.float32)
+        labels_trans = labels[:, 12:].astype(np.float32)
+    elif len(labels[0]) == 17:
+        labels_princ = labels[:, 3:5].astype(np.float32)
+        labels_rot = labels[:, 5:14].astype(np.float32)
+        labels_trans = labels[:, 14:].astype(np.float32)
+    else:
+        raise ValueError('Invalid label file: ', label_location)
 
     # image import
     images = []
@@ -63,7 +71,7 @@ def _data_import(batch_name, image_location, label_location):
         img = cvtColor(imread(os.path.join(root, name)), COLOR_BGR2RGB)
         images.append(img)
     images = np.asarray(images, dtype=np.uint8)
-    return images, labels_foc, labels_rot, labels_trans
+    return images, labels_foc, labels_princ, labels_rot, labels_trans
 
 
 def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs):
@@ -74,27 +82,34 @@ def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs)
         while counter < n_batches:
             current_batch = batch_names[counter]
             counter += 1
-            x, y_foc, y_rot, y_trans = _data_import(current_batch, image_location, label_location)
+            x, y_foc, y_princ, y_rot, y_trans = _data_import(current_batch, image_location, label_location)
             for idx in range(0, len(x), batch_size):
-                    yield x[idx:idx+batch_size], (y_foc[idx:idx+batch_size],
-                                                  y_rot[idx:idx+batch_size],
-                                                  y_trans[idx:idx+batch_size])
+                if y_princ is not None:
+                    yield x[idx:idx+batch_size], (y_foc[idx : idx + batch_size],
+                                                  y_princ[idx : idx + batch_size],
+                                                  y_rot[idx : idx + batch_size],
+                                                  y_trans[idx : idx + batch_size])
+                else:
+                    yield x[idx:idx + batch_size], (y_foc[idx : idx + batch_size],
+                                                    y_rot[idx : idx + batch_size],
+                                                    y_trans[idx : idx + batch_size])
 
 
 def pre_built(network, inputs):
     # select pre-built ImageNet network
+    trainable_block_names = []
+    trainable_layers = []
+    untrainable_layers = []
     if network == "vgg":
         base_net = VGG19(include_top=False, weights='imagenet', pooling='max')
-        trainable_block_names = ['block5', 'block4']
-        #trainable_block_names = []
-        trainable_layers = ['global_max_pooling2d']
-        #trainable_layers = []
-        untrainable_layers = []
+        #trainable_block_names = ['block5', 'block4']
+        #trainable_layers = ['global_max_pooling2d']
+        #untrainable_layers = []
     elif network == "resnet":
         base_net = ResNet50(include_top=False, weights='imagenet', pooling='max')
-        trainable_block_names = ['res5', 'bn5', 'activation_4']
-        trainable_layers = ['add_13', 'add_14', 'add_15', 'global_max_pooling2d']
-        untrainable_layers = ['activation_4']
+        #trainable_block_names = ['res5', 'bn5', 'activation_4']
+        #trainable_layers = ['add_13', 'add_14', 'add_15', 'global_max_pooling2d']
+        #untrainable_layers = ['activation_4']
     elif network == "densenet":
         base_net = DenseNet201(include_top=False, weights='imagenet', pooling='max')
     else:
@@ -118,7 +133,7 @@ def _is_untrainable(layer_name, block_names, inclusion_layers, exclusion_layers)
     return True
 
 
-def generate_model(img_shape, base_net, n_foc, n_rot, n_trans):
+def generate_model(img_shape, base_net, principal):
     # model definition
     #   common block
     img_input = Input(shape=img_shape, name='inputs')
@@ -131,23 +146,34 @@ def generate_model(img_shape, base_net, n_foc, n_rot, n_trans):
     #   focal block
     dense_focal = Dense(512, name='focal-fc1')(dense)
     dense_focal = LeakyReLU(alpha=0.01, name='activation_focal')(dense_focal)
-    dense_focal = Dense(n_foc, name='focal-fc_out')(dense_focal)
+    dense_focal = Dense(2, name='focal-fc_out')(dense_focal)
+    if principal:
+        #   principal block
+        dense_principal = Dense(512, name='principal-fc1')(dense)
+        dense_principal = LeakyReLU(alpha=0.01, name='activation_principal')(dense_principal)
+        dense_principal = Dense(2, name='principal-fc_out')(dense_principal)
     #   rotation block
     dense_rotation = Dense(512, name='rotation-fc1')(dense)
     dense_rotation = LeakyReLU(alpha=0.01, name='activation_rotation')(dense_rotation)
-    dense_rotation = Dense(n_rot, name='rotation-fc_out')(dense_rotation)
+    dense_rotation = Dense(9, name='rotation-fc_out')(dense_rotation)
     #   translation block
     dense_translation = Dense(512, name='translation-fc1')(dense)
     dense_translation = LeakyReLU(alpha=0.01, name='activation_trans')(dense_translation)
-    dense_translation = Dense(n_trans, name='translation-fc_out')(dense_translation)
+    dense_translation = Dense(3, name='translation-fc_out')(dense_translation)
 
     # model compilation
-    new_model = Model(inputs=img_input, outputs=[dense_focal, dense_rotation, dense_translation],
-                  name='CalibNet_' + base_net)
+    if principal:
+        new_model = Model(inputs=img_input,
+                          outputs=[dense_focal, dense_principal, dense_rotation, dense_translation],
+                          name='CalibNet_' + base_net)
+    else:
+        new_model = Model(inputs=img_input,
+                          outputs=[dense_focal, dense_rotation, dense_translation],
+                          name='CalibNet_' + base_net)
     return new_model
 
 
-def define_model(output_location, img_shape, base_net, n_foc, n_rot, n_trans):
+def define_model(output_location, img_shape, base_net, principal):
     # model import parameters
     model_name = os.path.split(os.path.dirname(output_location))[-1]
     weight_loc = os.path.join(output_location, model_name +"_weights.h5")
@@ -156,7 +182,7 @@ def define_model(output_location, img_shape, base_net, n_foc, n_rot, n_trans):
     epoch_num = 0
     # look for existing model
     if not os.path.exists(weight_loc):
-        return generate_model(img_shape, base_net, n_foc, n_rot, n_trans), epoch_num
+        return generate_model(img_shape, base_net, principal), epoch_num
     else:
         if os.path.exists(weight_loc):
             # model import
@@ -177,22 +203,15 @@ def define_model(output_location, img_shape, base_net, n_foc, n_rot, n_trans):
             raise ValueError('cannot find model structure location at '+ model_loc)
 
 
-def run_model(network="vgg", n_batch=60, epochs=5, minibatch_size=2, gpu_idx=3,
-        img_loc="../data/generated_images/", label_loc="../data/labels/", output_loc='../models/logs_practice/'):
-    # network settings
-    img_length = 1920
-    img_width = 1080
-    channels = 3
-    image_shape = (img_width, img_length, channels)
-    n_focal = 2
-    n_rotation = 9
-    n_translation = 3
+def run_model(network="vgg", n_batch=3, epochs=1, minibatch_size=8, gpu_idx=3, has_principal=False,
+              img_loc='../data/generated_images/', label_loc='../data/labels/', output_loc='../models/logs_practice/'):
     with tf.device('/device:GPU:'+str(gpu_idx)):
         # model setup
-        model, init_epoch = define_model(output_loc, image_shape, network, n_focal, n_rotation, n_translation)
+        image_shape = (1080, 1920, 3)
+        model, init_epoch = define_model(output_loc, image_shape, network, has_principal)
         model.compile(optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=0.0001),
                       loss=mse,
-                      metrics=[mae, mape, cosine_similarity])
+                      metrics=[mae, mape])
 
         # model visualisation
         output_name = os.path.split(os.path.dirname(output_loc))[-1]
@@ -260,8 +279,7 @@ def run_model(network="vgg", n_batch=60, epochs=5, minibatch_size=2, gpu_idx=3,
             writer.writerow([metrics[0], metrics[1], metrics[2], metrics[3], epochs_trained])
         model.save_weights(os.path.join(output_loc, output_name + '_weights.h5'))
 
-        sys.exit()
-
 
 if __name__ == "__main__":
     run_model(network='vgg', n_batch=3, epochs=1, gpu_idx=3)
+    sys.exit()
