@@ -17,6 +17,18 @@ import sys
 
 
 def set_split(img_loc, num, split):
+    """
+    Retrieves batch names from image folder, splits them into training, validation, and evaluation sets.
+    :param img_loc: STR, relative address of the image folder
+    :param num: INT, number of batches to retrieve
+    :param split: FLOAT, fraction of batches that go to evaluation and validation (same value for both)
+    :return: list of STR, test batch names;
+             list of STR, train batch names;
+             list of STR, validation batch names;
+             INT, number of testing images;
+             INT, number of training images;
+             INT, number of validation images;
+    """
     # split batches into train and test batches
     batch_names = next(os.walk(img_loc))[1]
     if num > len(batch_names):
@@ -43,6 +55,13 @@ def set_split(img_loc, num, split):
 
 
 def _data_import(batch_name, image_location, label_location):
+    """
+    retrieves images and labels for a single batch
+    :param batch_name: STR, name of the batch to retrieve from
+    :param image_location: STR, relative address of the image directory
+    :param label_location: STR, relative address of the label directory
+    :return: numpy arrays, images and labels
+    """
     # label import
     labels = []
     with open(os.path.join(label_location, batch_name+'.csv'), 'rt') as f:
@@ -75,6 +94,16 @@ def _data_import(batch_name, image_location, label_location):
 
 
 def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs):
+    """
+    data generator for training, evalutation, or validation
+    :param batch_names: list of STR, names of batches to retrieve
+    :param image_location: STR, relative address of the image directory
+    :param label_location: STR, relative address of the label directory
+    :param batch_size: INT, number inputs to generate at each yield
+    :param n_epochs: INT, number of times to repeat
+    :yield: numpy array, a batch of images;
+            TUPLE of numpy arrays, a corresponding batch of labels
+    """
     n_batches = len(batch_names)
     for _ in range(n_epochs):
         shuffle(batch_names)
@@ -96,15 +125,21 @@ def batch_gen(batch_names, image_location, label_location, batch_size, n_epochs)
 
 
 def pre_built(network, inputs):
-    # select pre-built ImageNet network
+    """
+    select and configures a pre-built ImageNet network
+    :param network: STR, name of base network: vgg, resnet, or densenet
+    :param inputs: keras layer, input layer to feed to model
+    :return: keras layer, output of an ImageNet network
+    """
+    #
     trainable_block_names = []
     trainable_layers = []
     untrainable_layers = []
     if network == "vgg":
         base_net = VGG19(include_top=False, weights='imagenet', pooling='max')
-        #trainable_block_names = ['block5', 'block4']
-        #trainable_layers = ['global_max_pooling2d']
-        #untrainable_layers = []
+        trainable_block_names = ['block5', 'block4']
+        trainable_layers = ['global_max_pooling2d']
+        untrainable_layers = []
     elif network == "resnet":
         base_net = ResNet50(include_top=False, weights='imagenet', pooling='max')
         #trainable_block_names = ['res5', 'bn5', 'activation_4']
@@ -123,6 +158,14 @@ def pre_built(network, inputs):
 
 
 def _is_untrainable(layer_name, block_names, inclusion_layers, exclusion_layers):
+    """
+    determines if a layer from the pre-built model should be trained
+    :param layer_name: STR, name of a model layer
+    :param block_names: STR, name of a model block to be trained
+    :param inclusion_layers: list of STR, names of model layers to be trained
+    :param exclusion_layers: list of STR, names of model layers to not be trained, as an exception to a trainable block
+    :return: BOOL, True if the layer is not to be trained, False otherwise
+    """
     if layer_name in exclusion_layers:
         return True
     if layer_name in inclusion_layers:
@@ -134,6 +177,13 @@ def _is_untrainable(layer_name, block_names, inclusion_layers, exclusion_layers)
 
 
 def generate_model(img_shape, base_net, principal):
+    """
+    builds the neural network model
+    :param img_shape: tuple of INT, shape of input image data
+    :param base_net: STR, name of pre-trained ImageNet model to use as model base: vgg, resnet, or densenet
+    :param principal: BOOL, True to include principal block, False to exclude it
+    :return: keras model, the model to be trained
+    """
     # model definition
     #   common block
     img_input = Input(shape=img_shape, name='inputs')
@@ -174,6 +224,16 @@ def generate_model(img_shape, base_net, principal):
 
 
 def define_model(output_location, img_shape, base_net, principal):
+    """
+    decides whether to generate a model or load a pre-existing one. The purpose of this method is to resume training if
+    it has been properly stopped (it uses information from evaluation to know at which epoch to resume)
+    :param output_location: STR, relative location of model's output directory
+    :param img_shape: tuple of INT, shape of input image data
+    :param base_net: STR, name of pre-trained ImageNet model to use as model base: vgg, resnet, or densenet
+    :param principal: BOOL, True to include principal block, False to exclude it
+    :return: keras model, the model to be trained;
+             INT, epoch number to start training from
+    """
     # model import parameters
     model_name = os.path.split(os.path.dirname(output_location))[-1]
     weight_loc = os.path.join(output_location, model_name +"_weights.h5")
@@ -192,7 +252,6 @@ def define_model(output_location, img_shape, base_net, principal):
             new_model.load_weights(weight_loc)
             with open(eval_loc) as f:
                 f = csv.reader(f)
-                next(f)
                 for line in f:
                     try:
                         epoch_num += int(line[-1])
@@ -205,6 +264,18 @@ def define_model(output_location, img_shape, base_net, principal):
 
 def run_model(network="vgg", n_batch=3, epochs=1, minibatch_size=8, gpu_idx=3, has_principal=False,
               img_loc='../data/generated_images/', label_loc='../data/labels/', output_loc='../models/logs_practice/'):
+    """
+    main function, this setups the model, imports the data, trains the model, evaluates, and saves the results
+    :param network: STR, name of pre-trained ImageNet model to use as model base: vgg, resnet, or densenet
+    :param n_batch: INT, number of batches to retrieve
+    :param epochs: INT, number of epochs to train model for
+    :param minibatch_size: INT, size of input batch for training and validation
+    :param gpu_idx: INT, index of GPU to use on machine
+    :param has_principal: BOOL, True to include principal point prediction in training, False otherwise
+    :param img_loc: STR, relative address of the image directory
+    :param label_loc: STR, relative address of the label directory
+    :param output_loc: STR, relative location of model's output directory
+    """
     with tf.device('/device:GPU:'+str(gpu_idx)):
         # model setup
         image_shape = (1080, 1920, 3)
@@ -229,9 +300,9 @@ def run_model(network="vgg", n_batch=3, epochs=1, minibatch_size=8, gpu_idx=3, h
             os.makedirs(tb_events_dir)
 
         # callbacks
-        stop_early = EarlyStopping(patience=5, monitor='loss')
+        stop_early = EarlyStopping(patience=5, monitor='loss', min_delta=50)
         checkpoint = ModelCheckpoint(os.path.join(checkpoints_dir+'weights_checkpoint.{epoch:02d}.h5'), monitor='loss',
-                                     save_best_only=True, save_weights_only=True, save_freq=3)
+                                     save_best_only=True, save_weights_only=True)
         tensorboard = TensorBoard(log_dir=tb_events_dir)
 
         # save model structure
@@ -275,9 +346,10 @@ def run_model(network="vgg", n_batch=3, epochs=1, minibatch_size=8, gpu_idx=3, h
         # save model weights
         with open(output_loc+output_name+"_eval.csv", 'a') as f:
             writer = csv.writer(f)
-            writer.writerow(['MSE', 'MAE', 'MAPE', 'cos_sim', 'epochs'])
-            writer.writerow([metrics[0], metrics[1], metrics[2], metrics[3], epochs_trained])
+            writer.writerow(['MSE', 'epochs'])
+            writer.writerow([metrics[0], epochs_trained])
         model.save_weights(os.path.join(output_loc, output_name + '_weights.h5'))
+    return
 
 
 if __name__ == "__main__":
