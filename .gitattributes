@@ -1,0 +1,5 @@
+models/vgg_principal/vgg_principal_weights.h5 filter=lfs diff=lfs merge=lfs -text
+models/dense/dense_weights.h5 filter=lfs diff=lfs merge=lfs -text
+models/res/res_weights.h5 filter=lfs diff=lfs merge=lfs -text
+models/vgg/vgg_weights.h5 filter=lfs diff=lfs merge=lfs -text
+models/vgg_deep/vgg_deep_weights.h5 filter=lfs diff=lfs merge=lfs -text
