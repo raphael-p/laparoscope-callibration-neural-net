@@ -12,6 +12,14 @@ Interventional & Surgical Sciences (WEISS) with the UCL Centre for Medical Image
 ### Dependencies:
 See `REQUIREMENTS.txt` for a list of dependencies.
 
+### Data:
+- A sample of the data is included in the repository `./data` contains 3 batches + 2 batches for prediction.
+This is from the dataset with a variable principal point. 
+- `./real_data` contains 33 still frames extracted from WEISS's laparoscope, and the labels. Its labels are
+the intrinsic parameters of the laparoscope (extrinsic parameters are not given), and it is the same for each image.
+There are three sets of images with different brightness settings (models performed best on `./real_data/images_250`).
+- To generate more data, use the code from `https://github.com/raphael-p/weiss-data_generation`.
+
 ### Instructions:
 - To train a model, run
 ```bash
@@ -27,12 +35,14 @@ A certain directory/filename structure is a assumed, but directory locations for
 a file called `<model name>_model.json`, and weights in a file called `<model name>_weights.h5`. These are generated
 automatically when training is complete.
 
-To make predictions using a trained model, run
+- To make predictions using a trained model, run
 ```bash
 python predict.py
 ```
 As before, there are options to be viewed with `-h` or `--help`. The model's storage location must be specified.
-The same assumptions about directories and filenames are made.
+The same assumptions about directories and filenames are made. When choosing how many images to predict, choosing '0'
+will predict all images in the image directory, and give accuracy statistics for them. Choosing another number will
+limit prediction to the first batch in the directory and show the actual outputs, and corresponding labels.
 
 ### Testing:
 Run tests with:
