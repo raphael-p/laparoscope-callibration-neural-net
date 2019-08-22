@@ -70,3 +70,8 @@ Training is resumed automatically if stopped nicely (the model finishes training
 rename to `<model name>_weights.h5`.
 2. Add a line to `<model name>_eval.csv` (or create the file if it is not already there), with the epoch number you wish
 to resume from (you should pick the epoch number on the weights checkpoint file).
+
+### Notes:
+- Trained models were saved on github with git-lfs (`https://git-lfs.github.com/`),
+they are also available here: `https://www.amazon.co.uk/clouddrive/share/DI3BRSoe2JbSqrzfVq27OJbfJ8rB5ii7Jiwra6tPkFf`.
+- Weight checkpoints for trained models were not included for storage space reasons.
