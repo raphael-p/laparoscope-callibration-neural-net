@@ -22,27 +22,27 @@ There are three sets of images with different brightness settings (models perfor
 
 ### Instructions:
 - To train a model, run
-```bash
-python train_network.py
-```
-This alone is not sufficent, however, there are quite a few options to select. To view these add the `-h` or `--help`
-flags to the command.
-
-A certain directory/filename structure is a assumed, but directory locations for images, labels, and models can be specified:
-- Images must be stored in a directory containing image batches (separation into batches was necessary during generation, and was kept that way for consistency).
-- Each batch must have its labels stored in a csv file of the same name as the batch.
-- Models are stored in their own directory within a directory of models. Within that, a model structure is stored in
-a file called `<model name>_model.json`, and weights in a file called `<model name>_weights.h5`. These are generated
-automatically when training is complete.
+    ```bash
+    python train_network.py
+    ```
+    This alone is not sufficent, however, there are quite a few options to select. To view these add the `-h` or `--help`
+    flags to the command.
+    
+    A certain directory/filename structure is a assumed, but directory locations for images, labels, and models can be specified:
+    - Images must be stored in a directory containing image batches (separation into batches was necessary during generation, and was kept that way for consistency).
+    - Each batch must have its labels stored in a csv file of the same name as the batch.
+    - Models are stored in their own directory within a directory of models. Within that, a model structure is stored in
+    a file called `<model name>_model.json`, and weights in a file called `<model name>_weights.h5`. These are generated
+    automatically when training is complete.
 
 - To make predictions using a trained model, run
-```bash
-python predict.py
-```
-As before, there are options to be viewed with `-h` or `--help`. The model's storage location must be specified.
-The same assumptions about directories and filenames are made. When choosing how many images to predict, choosing '0'
-will predict all images in the image directory, and give accuracy statistics for them. Choosing another number will
-limit prediction to the first batch in the directory and show the actual outputs, and corresponding labels.
+    ```bash
+    python predict.py
+    ```
+    As before, there are options to be viewed with `-h` or `--help`. The model's storage location must be specified.
+    The same assumptions about directories and filenames are made. When choosing how many images to predict, choosing '0'
+    will predict all images in the image directory, and give accuracy statistics for them. Choosing another number will
+    limit prediction to the first batch in the directory and show the actual outputs, and corresponding labels.
 
 ### Testing:
 Run tests with:
